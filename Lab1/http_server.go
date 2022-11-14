@@ -1,13 +1,15 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"fmt"
-	"io/fs"
+	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
-	"path"
+	"sync"
 )
 
 var (
@@ -15,6 +17,7 @@ var (
 )
 
 func main() {
+	wg := new(sync.WaitGroup)
 
 	arguments := os.Args
 	if len(arguments) == 1 {
@@ -22,16 +25,13 @@ func main() {
 		return
 	}
 	PORT := ":" + arguments[1]
-	//fmt.Fprintf(os.Stdout, path.Base("/a/b"))
-
-	//http.HandleFunc("/", handler)
-	//http.ListenAndServe(":9000", nil)
 
 	// Initialize a tcp listner with the port specified
 	listner, err := net.Listen("tcp", PORT)
 	if err != nil {
 		log.Fatalln(err)
 	}
+
 	// Closes the linstner at the end of runtime
 	defer listner.Close()
 
@@ -44,93 +44,95 @@ func main() {
 			continue
 		}
 
-		// TODO: Use waitgroups wg.Add(1)
 		for openThreads >= 10 {
-			// TODO: wait
+			wg.Wait()
 		}
-		openThreads++
 
-		go handle(conn)
+		wg.Add(1)
+		go handle(conn, wg)
 	}
 }
 
-func handle(conn net.Conn) {
+func handle(conn net.Conn, wg *sync.WaitGroup) {
 	// Anonymous function to decrement openThreads at the end (defer must call function)
 	defer func() { openThreads -= 1 }()
 	defer conn.Close()
+	defer wg.Done()
 
-	req := http.Request.readRequest(conn)
+	req, err := http.ReadRequest(bufio.NewReader(conn))
+	if err != nil {
+		log.Println(err)
+	}
 
-	switch req.method {
+	switch req.Method {
 	case "GET":
-		getHandler(conn, req)
-		break
+		getHandler(*req, conn)
 	case "POST":
-		postHandler(conn, req)
-		break
+		postHandler(*req, conn)
 	default:
-		sendResponse(501, nil, req)
+		sendResponse(501, nil, *req, conn)
 	}
 
 }
 
-func getHandler(req http.Request, pathStr string) {
-
-	data, err := os.ReadFile(path.Base(pathStr))
+func getHandler(req http.Request, conn net.Conn) {
+	data, err := os.ReadFile(req.URL.Path[1:])
 	if err != nil {
-		// TODO: Responde with 404 error not found
-		//conn.Write([]byte("404"))
-		sendResponse(404, nil, req)
+		sendResponse(404, nil, req, conn)
 	}
-	//fmt.Fprintf(w, html)
-	//conn.Write(data)
-	sendResponse(200, data, req)
+	sendResponse(200, data, req, conn)
 }
 
-func postHandler(req http.Request, pathStr string, data []byte) {
-	// TODO: Is this the correct fs mode???
-	err := os.WriteFile(path.Base(pathStr), data, fs.ModeAppend)
+func postHandler(req http.Request, conn net.Conn) {
+
+	req.ParseMultipartForm(32 << 20)
+	file, handler, err := req.FormFile("uploadfile")
 	if err != nil {
-		// TODO: Responde with correct error
-		//conn.Write([]byte("error"))
-		sendResponse(500, nil, req)
+		sendResponse(500, nil, req, conn)
 	}
 
-	//fmt.Fprintf(w, html)
+	localfile, err := os.Create(handler.Filename)
+	if err != nil {
+		log.Println(err)
+	}
 
-	// TODO: Send success message
-	sendResponse(200, nil, req)
-	//conn.Write([]byte("200 Success"))
+	_, err = io.Copy(localfile, file)
+	if err != nil {
+		sendResponse(500, nil, req, conn)
+	}
+
+	sendResponse(200, nil, req, conn)
 }
 
-func sendResponse(statusCode int, body []byte, req http.Request) {
+func sendResponse(statusCode int, body []byte, req http.Request, conn net.Conn) {
 	status := ""
 	switch statusCode {
 	case 200:
 		status = "200 OK"
-		break
 	case 404:
 		status = "404 Not Found"
-		break
 	case 500:
 		status = "500 Internal Server Error"
-		break
 	case 501:
 		status = "501 Not Implemented"
-		break
+	}
+	if body == nil {
+		body = []byte(status)
 	}
 
-	t := &http.Response{
+	reader := bytes.NewReader(body)
+
+	res := &http.Response{
 		Status:        status,
 		StatusCode:    statusCode,
 		Proto:         "HTTP/1.1",
 		ProtoMajor:    1,
 		ProtoMinor:    1,
-		Body:          body,
+		Body:          io.NopCloser(reader),
 		ContentLength: int64(len(body)),
-		Request:       req,
+		Request:       &req,
 		Header:        make(http.Header, 0),
 	}
 
-	// TODO: send response
+	res.Write(conn)
 }
