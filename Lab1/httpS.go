@@ -9,26 +9,10 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"strings"
 )
 
-func getHandler(w http.ResponseWriter, r *http.Request) {
-	var html, err = loadFile(path.Base(r.URL.EscapedPath()))
-	if err != nil {
-		w.WriteHeader(404)
-	}
-	fmt.Fprintf(w, html)
-}
-
-func loadFile(filename string) (string, error) {
-	bytes, err := ioutil.ReadFile(filename)
-	if err != nil {
-		return "", err
-	}
-	return string(bytes), nil
-
-}
-
-func main() {
+func mainOld() {
 
 	arguments := os.Args
 	if len(arguments) == 1 {
@@ -67,7 +51,7 @@ func handle(conn net.Conn) {
 
 	request(conn)
 
-	respond(conn)
+	response(conn)
 
 }
 
@@ -78,19 +62,36 @@ func request(conn net.Conn) {
 		line := scanner.Text()
 		if i == 0 {
 			//first word of the first
-			m := string.Fields(line)[0]
+			m := strings.Fields(line)[0]
 
-			if m == "GET"{
+			if m == "GET" {
 
-			}else if m == "POST"{
+			} else if m == "POST" {
 
-			}else{
+			} else {
 
 			}
 		}
-		if 
+		//if
 
 	}
+}
+
+func getHandler(w http.ResponseWriter, r *http.Request) {
+	var html, err = loadFile(path.Base(r.URL.EscapedPath()))
+	if err != nil {
+		w.WriteHeader(404)
+	}
+	fmt.Fprintf(w, html)
+}
+
+func loadFile(filename string) (string, error) {
+	bytes, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return "", err
+	}
+	return string(bytes), nil
+
 }
 
 func response(conn net.Conn) {

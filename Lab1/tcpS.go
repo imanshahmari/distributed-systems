@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func main() {
+func main3() {
 	arguments := os.Args
 	if len(arguments) == 1 {
 		fmt.Println("Please provide port number")
