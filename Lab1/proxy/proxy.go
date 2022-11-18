@@ -19,14 +19,17 @@ var (
 func main() {
 	wg := new(sync.WaitGroup)
 
+	// proxy 80 server:81
 	arguments := os.Args
-	if len(arguments) == 1 {
-		fmt.Println("Please provide port number")
+	if len(arguments) == 2 {
+		fmt.Println("Please provide port number and proxy url (with port)")
 		return
 	}
-	PORT := ":" + arguments[1]
 
-	fmt.Println("Server started on port", PORT)
+	PORT := ":" + arguments[1]
+	proxyURL := arguments[2]
+
+	fmt.Println("Server started on port", PORT, "with forwarding to", proxyURL)
 
 	// Initialize a tcp listner with the port specified
 	listner, err := net.Listen("tcp", PORT)
@@ -51,11 +54,11 @@ func main() {
 		}
 
 		wg.Add(1)
-		go handle(conn, wg)
+		go handle(proxyURL, conn, wg)
 	}
 }
 
-func handle(conn net.Conn, wg *sync.WaitGroup) {
+func handle(proxyURL string, conn net.Conn, wg *sync.WaitGroup) {
 	// Anonymous function to decrement openThreads at the end (defer must call function)
 	defer func() { openThreads -= 1 }()
 	defer conn.Close()
@@ -66,44 +69,29 @@ func handle(conn net.Conn, wg *sync.WaitGroup) {
 		log.Println(err)
 	}
 
-	switch req.Method {
-	case "GET":
-		getHandler(*req, conn)
-	case "POST":
-		postHandler(*req, conn)
-	default:
+	if req.Method == "GET" {
+		getHandler(proxyURL, *req, conn)
+	} else {
 		sendResponse(501, nil, *req, conn)
 	}
 
 }
 
-func getHandler(req http.Request, conn net.Conn) {
-	data, err := os.ReadFile(req.URL.Path[1:])
+func getHandler(proxyURL string, req http.Request, conn net.Conn) {
+	res, err := http.Get(proxyURL + req.URL.Path)
+
 	if err != nil {
 		sendResponse(404, nil, req, conn)
 	}
+
+	data, err := io.ReadAll(res.Body)
+	if err != nil {
+		sendResponse(500, nil, req, conn)
+	}
+
 	sendResponse(200, data, req, conn)
-}
 
-func postHandler(req http.Request, conn net.Conn) {
-
-	req.ParseMultipartForm(32 << 20)
-	file, handler, err := req.FormFile("uploadfile")
-	if err != nil {
-		sendResponse(500, nil, req, conn)
-	}
-
-	localfile, err := os.Create(handler.Filename)
-	if err != nil {
-		log.Println(err)
-	}
-
-	_, err = io.Copy(localfile, file)
-	if err != nil {
-		sendResponse(500, nil, req, conn)
-	}
-
-	sendResponse(200, nil, req, conn)
+	res.Write(conn)
 }
 
 func sendResponse(statusCode int, body []byte, req http.Request, conn net.Conn) {
