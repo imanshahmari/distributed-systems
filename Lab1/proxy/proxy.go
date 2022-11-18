@@ -73,25 +73,31 @@ func handle(proxyURL string, conn net.Conn, wg *sync.WaitGroup) {
 		getHandler(proxyURL, *req, conn)
 	} else {
 		sendResponse(501, nil, *req, conn)
+		return
 	}
 
 }
 
 func getHandler(proxyURL string, req http.Request, conn net.Conn) {
-	res, err := http.Get(proxyURL + req.URL.Path)
+	fmt.Println(proxyURL + req.URL.Path)
+
+	res, err := http.Get("http://" + proxyURL + req.URL.Path)
 
 	if err != nil {
-		sendResponse(404, nil, req, conn)
+		sendResponse(404, []byte(err.Error()), req, conn)
+		return
 	}
 
-	data, err := io.ReadAll(res.Body)
+	defer res.Body.Close()
+	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		sendResponse(500, nil, req, conn)
+		return
 	}
 
-	sendResponse(200, data, req, conn)
+	sendResponse(200, body, req, conn)
 
-	res.Write(conn)
+	//res.Write(conn)
 }
 
 func sendResponse(statusCode int, body []byte, req http.Request, conn net.Conn) {
