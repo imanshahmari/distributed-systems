@@ -78,9 +78,19 @@ func handle(conn net.Conn, wg *sync.WaitGroup) {
 }
 
 func getHandler(req http.Request, conn net.Conn) {
-	data, err := os.ReadFile(req.URL.Path[1:])
+	// Remove first slash from path
+	path := req.URL.Path[1:]
+
+	// If the path ends in slash it is implicit that we want the index.html file in this folder or empty we want the base index.html
+	if len(path) == 0 || path[len(path)-1:] == "/" {
+		path += "index.html"
+	}
+	fmt.Println(path)
+
+	data, err := os.ReadFile(path)
 	if err != nil {
 		sendResponse(404, nil, req, conn)
+		return
 	}
 	sendResponse(200, data, req, conn)
 }
@@ -91,6 +101,7 @@ func postHandler(req http.Request, conn net.Conn) {
 	file, handler, err := req.FormFile("uploadfile")
 	if err != nil {
 		sendResponse(500, nil, req, conn)
+		return
 	}
 
 	localfile, err := os.Create(handler.Filename)
@@ -101,6 +112,7 @@ func postHandler(req http.Request, conn net.Conn) {
 	_, err = io.Copy(localfile, file)
 	if err != nil {
 		sendResponse(500, nil, req, conn)
+		return
 	}
 
 	sendResponse(200, nil, req, conn)
