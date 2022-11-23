@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -87,6 +88,8 @@ func getHandler(req http.Request, conn net.Conn) {
 	}
 	fmt.Println(path)
 
+	checkFiletype(path, req, conn)
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		sendResponse(404, nil, req, conn)
@@ -104,6 +107,8 @@ func postHandler(req http.Request, conn net.Conn) {
 		return
 	}
 
+	checkFiletype(handler.Filename, req, conn)
+
 	localfile, err := os.Create(handler.Filename)
 	if err != nil {
 		log.Println(err)
@@ -118,11 +123,27 @@ func postHandler(req http.Request, conn net.Conn) {
 	sendResponse(200, nil, req, conn)
 }
 
+func checkFiletype(filename string, req http.Request, conn net.Conn) {
+	s := strings.Split(filename, ".")
+	extention := s[len(s)-1]
+
+	allowedExtensions := []string{"html", "txt", "gif", "jpeg", "jpg", "css"}
+
+	for _, x := range allowedExtensions {
+		if x == extention {
+			return
+		}
+	}
+	sendResponse(400, nil, req, conn)
+}
+
 func sendResponse(statusCode int, body []byte, req http.Request, conn net.Conn) {
 	status := ""
 	switch statusCode {
 	case 200:
 		status = "200 OK"
+	case 400:
+		status = "400 Bad Request"
 	case 404:
 		status = "404 Not Found"
 	case 500:
@@ -147,6 +168,8 @@ func sendResponse(statusCode int, body []byte, req http.Request, conn net.Conn) 
 		Request:       &req,
 		Header:        make(http.Header, 0),
 	}
+
+	res.Header.Set("Content-Type", http.DetectContentType(body))
 
 	res.Write(conn)
 }
