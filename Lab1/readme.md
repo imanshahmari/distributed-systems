@@ -2,7 +2,7 @@
 
 ### Group 22
 - Davide Canci
-- Iman Shahmari
+- Iman Shahmari Chat Gieh
 - Alexander Bodin
 
 
