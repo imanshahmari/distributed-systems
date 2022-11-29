@@ -13,6 +13,20 @@ import (
 	"strings"
 )
 
+/* TODOs:
+   - The find_successor always uses the hashed address, change to use id defined in terminal flag. This means changeing how the networking is done and also the comparison in find_successor. Do we need to store the successor id in our Node??
+   - Change n.Successor to a list??
+   - Initialize n.Successors and n.FingerTable correctly
+   - Implement stabilize (add networking method get_predecessor)
+   - Implement notify (add networking method recieved_notify)
+   - Implement fix_fingers (does find_successor need changes??)
+   - Implement check_predecessor  (add networking method recieved_ping (ie responds back with OK message if alive))
+   - Pass in all flags to Chord via docker (can you do all in one env variable)
+   - Update readme
+
+   *Remember that if we need our node object n in these functions, it has to be passed in as a pointer otherwise we copy the values and it will not be changed for the rest of the functions (&n creates a pointer reference (from main()), *n uses the pointer as a value, and (n *Node) is the type to use in the function definitions)
+*/
+
 type Key string
 
 type NodeAddress string
@@ -33,16 +47,6 @@ type Communication struct {
 	Var1     string `json:"var1"`
 	Var2     string `json:"var2"`
 }
-
-/* TODOs:
-   - The find_successor always uses the hashed address, change to use id defined in terminal flag. This means changeing how the networking is done and also the comparison. Do we need to store the successor id in our Nodee??
-   - Implement stabilize (add networking method get_predecessor)
-   - Implement notify (add networking method recieved_notify)
-   - Implement fix_fingers (does find_successor need changes??)
-   - Implement check_predecessor  (add networking method recieved_ping (ie responds back with OK message if alive))
-
-   *Remember that if we need our node object n in these functions, it has to be passed in as a pointer otherwise we copy the values and it will not be changed for the rest of the functions (&n creates a pointer reference, *n uses the pointer as a value, and (n *Node) is the type to use in the function definitions)
-*/
 
 func main() {
 
@@ -76,8 +80,7 @@ func main() {
 
 	n := Node{
 		Address: *a + ":" + fmt.Sprint(*p),
-
-		Bucket: make(map[string]string),
+		Bucket:  make(map[string]string),
 	}
 
 	if *i == "" {
@@ -87,15 +90,14 @@ func main() {
 		n.Id = *i
 	}
 
-	// Create a new Chord ring if there is no --ja defined
+	// Create a new Chord ring if there is no --ja defined otherwise join
 	if *ja == "" {
-		// Create a new ring
-		n.Successor = n.Address
+		create(&n)
 	} else {
-		// Join network
-		find_successor(n.Address, *ja+":"+fmt.Sprint(*jp), n.Address)
+		join(&n, ja, jp)
 	}
 
+	// Start listening to incoming connections from other nodes
 	go listen(&n, p)
 	fmt.Println("Chord server started on adress: ", n.Address, " with id: ", n.Id)
 
@@ -105,59 +107,10 @@ func main() {
 	go check_predecessor(tcp)
 
 	// Handle command line commands
-	for {
-		// Read from cmd
-		reader := bufio.NewReader(os.Stdin)
-		//fmt.Print("Enter command: ")
-		input, _ := reader.ReadString('\n')
-
-		// Format string (remove newline and to lower case letters)
-		input = strings.ToLower(input[:len(input)-1])
-		//fmt.Println(input)
-
-		switch input {
-		case "setsuccessor", "succ", "s":
-			reader := bufio.NewReader(os.Stdin)
-			fmt.Print("Enter address of successor: ")
-
-			address, _ := reader.ReadString('\n')
-			n.Successor = address[:len(address)-1]
-
-			print_state(&n)
-		case "setpredecessor", "pre":
-			reader := bufio.NewReader(os.Stdin)
-			fmt.Print("Enter address of predecessor: ")
-
-			address, _ := reader.ReadString('\n')
-			n.Predecessor = address[:len(address)-1]
-
-			print_state(&n)
-		case "lookup", "l":
-			lookup()
-		case "storefile", "file", "f":
-			store_file()
-		case "printstate", "p":
-			print_state(&n)
-		case "exit", "x":
-			return
-		case "help", "h", "man":
-			fallthrough
-		default:
-			fmt.Print(
-				"setsuccessor, succ, s - asks for and sets the successor address\n",
-				"setpredecessor, pre - asks for and sets the predecessor address\n",
-				"lookup, l - finds the address of a resource\n",
-				"storefile, file, f - stores a file in the network\n",
-				"printstate, p - prints the state of the node\n",
-				"exit, x - terminates the node\n",
-				"help, h, man - shows this list of accepted commands\n",
-			)
-		}
-	}
-
+	commandLine(&n)
 }
 
-/***** Find successor *****/
+/***** Chord functions *****/
 
 func find_successor(currentAddress string, successorAddress string,
 	returnAddress string) {
@@ -183,15 +136,91 @@ func recieve_successor(n *Node, successorAddress string) {
 	n.Successor = successorAddress
 	fmt.Println("Recieved successor at: ", successorAddress)
 }
+func create(n *Node) {
+	n.Successor = n.Address
+}
+
+func join(n *Node, ja *string, jp *int) {
+	find_successor(n.Address, *ja+":"+fmt.Sprint(*jp), n.Address)
+}
+
+/***** Fix ring *****/
+
+func stabilize(tc *int) {
+	// wait tc milliseconds
+
+}
+
+func fix_fingers(tff *int) {
+	// wait tff milliseconds
+
+}
+
+func check_predecessor(tcp *int) {
+	// wait tcp milliseconds
+
+}
 
 /***** Command line commands *****/
 
+func commandLine(n *Node) {
+	for {
+		// Read from cmd
+		reader := bufio.NewReader(os.Stdin)
+		//fmt.Print("Enter command: ")
+		input, _ := reader.ReadString('\n')
+
+		// Format string (remove newline and to lower case letters)
+		input = strings.ToLower(input[:len(input)-1])
+		//fmt.Println(input)
+
+		switch input {
+		case "setsuccessor", "succ", "s":
+			reader := bufio.NewReader(os.Stdin)
+			fmt.Print("Enter address of successor: ")
+
+			address, _ := reader.ReadString('\n')
+			n.Successor = address[:len(address)-1]
+
+			print_state(n)
+		case "setpredecessor", "pre":
+			reader := bufio.NewReader(os.Stdin)
+			fmt.Print("Enter address of predecessor: ")
+
+			address, _ := reader.ReadString('\n')
+			n.Predecessor = address[:len(address)-1]
+
+			print_state(n)
+		case "lookup", "l":
+			lookup()
+		case "storefile", "file", "f":
+			store_file()
+		case "printstate", "p":
+			print_state(n)
+		case "exit", "x":
+			os.Exit(0)
+		case "help", "h", "man":
+			fallthrough
+		default:
+			fmt.Print(
+				"setsuccessor, succ, s - asks for and sets the successor address\n",
+				"setpredecessor, pre - asks for and sets the predecessor address\n",
+				"lookup, l - finds the address of a resource\n",
+				"storefile, file, f - stores a file in the network\n",
+				"printstate, p - prints the state of the node\n",
+				"exit, x - terminates the node\n",
+				"help, h, man - shows this list of accepted commands\n",
+			)
+		}
+	}
+}
+
 func lookup() {
-	return
+
 }
 
 func store_file() {
-	return
+
 }
 
 func print_state(n *Node) {
@@ -203,23 +232,6 @@ func print_state(n *Node) {
 
 	// Print first part of hashvalues to see if they are in order
 	fmt.Println(p[:len(p)-30], "... -> (", a[:len(a)-30], "... ) ->", s[:len(s)-30], "...")
-}
-
-/***** Fix ring *****/
-
-func stabilize(tc *int) {
-	// wait tc milliseconds
-	return
-}
-
-func fix_fingers(tff *int) {
-	// wait tff milliseconds
-	return
-}
-
-func check_predecessor(tcp *int) {
-	// wait tcp milliseconds
-	return
 }
 
 /***** Networking *****/
