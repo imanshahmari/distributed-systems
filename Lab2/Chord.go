@@ -13,26 +13,36 @@ import (
 	"strings"
 )
 
-type Key big.Int
+type Key string
 
 type NodeAddress string
 
 type Node struct {
 	Id          string
 	Address     string
-	FingerTable map[string]string
+	FingerTable []string
 	Predecessor string
 	Successor   string
 
 	Bucket map[string]string
 }
 
-// struct to unmarshal json into
+// struct to decode json into
 type Communication struct {
 	Function string `json:"function"`
 	Var1     string `json:"var1"`
 	Var2     string `json:"var2"`
 }
+
+/* TODOs:
+   - The find_successor always uses the hashed address, change to use id defined in terminal flag. This means changeing how the networking is done and also the comparison. Do we need to store the successor id in our Nodee??
+   - Implement stabilize (add networking method get_predecessor)
+   - Implement notify (add networking method recieved_notify)
+   - Implement fix_fingers (does find_successor need changes??)
+   - Implement check_predecessor  (add networking method recieved_ping (ie responds back with OK message if alive))
+
+   *Remember that if we need our node object n in these functions, it has to be passed in as a pointer otherwise we copy the values and it will not be changed for the rest of the functions (&n creates a pointer reference, *n uses the pointer as a value, and (n *Node) is the type to use in the function definitions)
+*/
 
 func main() {
 
@@ -66,6 +76,8 @@ func main() {
 
 	n := Node{
 		Address: *a + ":" + fmt.Sprint(*p),
+
+		Bucket: make(map[string]string),
 	}
 
 	if *i == "" {
@@ -92,6 +104,7 @@ func main() {
 	go fix_fingers(tff)
 	go check_predecessor(tcp)
 
+	// Handle command line commands
 	for {
 		// Read from cmd
 		reader := bufio.NewReader(os.Stdin)
@@ -127,6 +140,18 @@ func main() {
 			print_state(&n)
 		case "exit", "x":
 			return
+		case "help", "h", "man":
+			fallthrough
+		default:
+			fmt.Print(
+				"setsuccessor, succ, s - asks for and sets the successor address\n",
+				"setpredecessor, pre - asks for and sets the predecessor address\n",
+				"lookup, l - finds the address of a resource\n",
+				"storefile, file, f - stores a file in the network\n",
+				"printstate, p - prints the state of the node\n",
+				"exit, x - terminates the node\n",
+				"help, h, man - shows this list of accepted commands\n",
+			)
 		}
 	}
 
@@ -140,8 +165,6 @@ func find_successor(currentAddress string, successorAddress string,
 	c := hash_string(currentAddress)
 	s := hash_string(successorAddress)
 	r := hash_string(returnAddress)
-
-	// TODO: Fix case where new node is between largest and smallest node (wrap around the circle)
 
 	// If r is between c and s, or if successor wraps around
 	if (r > c && r <= s) || (s <= c && r > c) {
@@ -173,7 +196,13 @@ func store_file() {
 
 func print_state(n *Node) {
 	fmt.Println(n.Predecessor, "-> (", n.Address, ") ->", n.Successor)
-	fmt.Println(hash_string(n.Predecessor)[:10], "... -> (", hash_string(n.Address)[:10], "... ) ->", hash_string(n.Successor)[:10], "...")
+
+	p := hash_string(n.Predecessor)
+	a := hash_string(n.Address)
+	s := hash_string(n.Successor)
+
+	// Print first part of hashvalues to see if they are in order
+	fmt.Println(p[:len(p)-30], "... -> (", a[:len(a)-30], "... ) ->", s[:len(s)-30], "...")
 }
 
 /***** Fix ring *****/
@@ -275,6 +304,11 @@ func hash(str string) *big.Int {
 }
 
 func hash_string(str string) string {
+	// No hashing of the empty string
+	if str == "" {
+		return ""
+	}
+
 	h := sha1.New()
 	h.Write([]byte(str))
 	sha1_hash := hex.EncodeToString(h.Sum(nil))
