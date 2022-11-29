@@ -103,6 +103,13 @@ func main() {
 		fmt.Println(input)
 
 		switch input {
+		case "setsuccessor":
+			reader := bufio.NewReader(os.Stdin)
+			fmt.Print("Enter address of successor: ")
+			address, _ := reader.ReadString('\n')
+
+			n.Successor = address[:len(address)-1]
+
 		case "lookup":
 			lookup()
 		case "storefile":
@@ -128,7 +135,7 @@ func find_successor(currentAddress string, successorAddress string,
 	// TODO: Fix case where new node is between largest and smallest node (wrap around the circle)
 
 	// If r is between c and s, or if successor wraps around
-	if (r > c && r <= s) || (s <= c && r != c) {
+	if (r > c && r <= s) || (s <= c && r > c) {
 		// The return- is between current- and successor- address' -> found successor
 		sendMessage(returnAddress, "recieve_successor", successorAddress, "")
 	} else {
