@@ -100,23 +100,32 @@ func main() {
 
 		// Format string (remove newline and to lower case letters)
 		input = strings.ToLower(input[:len(input)-1])
-		fmt.Println(input)
+		//fmt.Println(input)
 
 		switch input {
-		case "setsuccessor":
+		case "setsuccessor", "succ", "s":
 			reader := bufio.NewReader(os.Stdin)
 			fmt.Print("Enter address of successor: ")
-			address, _ := reader.ReadString('\n')
 
+			address, _ := reader.ReadString('\n')
 			n.Successor = address[:len(address)-1]
 
-		case "lookup":
-			lookup()
-		case "storefile":
-			store_file()
-		case "printstate":
 			print_state(&n)
-		case "exit":
+		case "setpredecessor", "pre":
+			reader := bufio.NewReader(os.Stdin)
+			fmt.Print("Enter address of predecessor: ")
+
+			address, _ := reader.ReadString('\n')
+			n.Predecessor = address[:len(address)-1]
+
+			print_state(&n)
+		case "lookup", "l":
+			lookup()
+		case "storefile", "file", "f":
+			store_file()
+		case "printstate", "p":
+			print_state(&n)
+		case "exit", "x":
 			return
 		}
 	}
@@ -163,7 +172,8 @@ func store_file() {
 }
 
 func print_state(n *Node) {
-	fmt.Println(n.Predecessor, " -> (", n.Address, ") -> ", n.Successor)
+	fmt.Println(n.Predecessor, "-> (", n.Address, ") ->", n.Successor)
+	fmt.Println(hash_string(n.Predecessor)[:10], "... -> (", hash_string(n.Address)[:10], "... ) ->", hash_string(n.Successor)[:10], "...")
 }
 
 /***** Fix ring *****/
