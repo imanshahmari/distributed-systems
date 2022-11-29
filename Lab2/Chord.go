@@ -8,8 +8,9 @@ import (
 	"flag"
 	"fmt"
 	"math/big"
-	"net/http"
+	"net"
 	"os"
+	"strings"
 )
 
 type Key big.Int
@@ -17,88 +18,74 @@ type Key big.Int
 type NodeAddress string
 
 type Node struct {
-	Id 			   Key
-	Address        NodeAddress
-	FingerTable    map[Key]NodeAddress
-	Predecessor_id Key
-	Predecessor    NodeAddress
-	//Successor      []NodeAddress
+	Id          string
+	Address     string
+	FingerTable map[string]string
+	Predecessor string
+	Successor   string
 
-
-	Bucket map[Key]string
+	Bucket map[string]string
 }
 
 // struct to unmarshal json into
 type Communication struct {
-	function string  `json:"function"`
-	var1     string  `json:"var1"`
-	var2     string  `json:"var2"`
-	id       big.Int `json:"id"`
+	Function string `json:"function"`
+	Var1     string `json:"var1"`
+	Var2     string `json:"var2"`
 }
-
-var (
-	n Node
-)
 
 func main() {
 
-	// Get the command line arguments
+	// Get the command line flags
 	a := flag.String("a", "", "ip of client")
 	p := flag.Int("p", 0, "port of client")
 	ja := flag.String("ja", "", "ip of existing node")
 	jp := flag.Int("jp", 0, "port of existing node")
-	ts := flag.Int("ts", 0, "time in ms between stabilize")
-	tff := flag.Int("tff", 0, "time in ms between fix fingers")
-	tcp := flag.Int("tcp", 0, "time in ms between check predecessor")
-	r := flag.Int("r", 0, "number of successors")
+	ts := flag.Int("ts", 500, "time in ms between stabilize")
+	tff := flag.Int("tff", 500, "time in ms between fix fingers")
+	tcp := flag.Int("tcp", 500, "time in ms between check predecessor")
+	r := flag.Int("r", 1, "number of successors")
 	i := flag.String("i", "", "id of client (optional)")
-
-	// Supress warning
-	_ = i
 
 	flag.Parse()
 
-	if *a == "" || *p == 0 || (*ja != "" && *jp == 0) || *ts == 0 || *tff == 0 || *tcp == 0 || *r == 0 {
+	// Check for missing/wrong flags
+	if *a == "" || *p == 0 || (*ja != "" && *jp == 0) || /* *ts == 0 || *tff == 0 || *tcp == 0 ||*/ *r == 0 {
 		fmt.Print("Flag missing, usage:\n",
 			"-a    <String> ip of client\n",
 			"-p    <Number> port of client\n",
-			"--ja  <String> ip of existing node\n",
+			"--ja  <String> ip of existing node (leave out to create new network)\n",
 			"--jp  <Number> port of existing node\n",
-			"--ts  <Number> time in ms between stabilize\n",
-			"--tff <Number> time in ms between fix fingers\n",
-			"--tcp <Number> time in ms between check predecessor\n",
-			"-r    <Number> number of successors\n",
-			"-i    <String> id of client (optional)\n")
+			"--ts  <Number> time in ms between stabilize (default=500)\n",
+			"--tff <Number> time in ms between fix fingers (default=500)\n",
+			"--tcp <Number> time in ms between check predecessor (default=500)\n",
+			"-r    <Number> number of successors (default=1)\n",
+			"-i    <String> id of client (default is random)\n")
 		return
 	}
 
-	n = Node{
-		Address:     *a,
-		FingerTable: make([]NodeAddress),
-		Predecessor: nil,
-		Successor:   make([]NodeAddress),
+	n := Node{
+		Address: *a + ":" + fmt.Sprint(*p),
 	}
 
-	if *i != "" {
+	if *i == "" {
 		// If the id is not defined by comand line argument, generate it from hashing ip and port
-		n.Id = hash(*a + ":" + str(*p))
+		n.Id = hash_string(n.Address)
 	} else {
-		// TODO: Convert string hex to BigInt
-		n.Id = 0
+		n.Id = *i
 	}
 
 	// Create a new Chord ring if there is no --ja defined
 	if *ja == "" {
 		// Create a new ring
-		n.Successor_Id = n.id
+		n.Successor = n.Address
 	} else {
 		// Join network
-		n.Successor_Id = find_successor(n)
+		find_successor(n.Address, *ja+":"+fmt.Sprint(*jp), n.Address)
 	}
 
-	fmt.Println("Chord server started on adress: ", *a, ":", *p)
-
-	go listen(p)
+	go listen(&n, p)
+	fmt.Println("Chord server started on adress: ", n.Address, " with id: ", n.Id)
 
 	// Start a go routine for each of the steps to make the network consistent
 	go stabilize(ts)
@@ -108,75 +95,57 @@ func main() {
 	for {
 		// Read from cmd
 		reader := bufio.NewReader(os.Stdin)
-		fmt.Print("Enter command: ")
+		//fmt.Print("Enter command: ")
 		input, _ := reader.ReadString('\n')
-		fmt.Print(input)
+
+		// Format string (remove newline and to lower case letters)
+		input = strings.ToLower(input[:len(input)-1])
+		fmt.Println(input)
 
 		switch input {
-		case "Lookup":
-
-		case "StoreFile":
-
-		case "PrintState":
-
-		}
-	}
-
-}
-
-func find_successor(n Node, i big.Int) {
-	if (n.id > i && id <= n.Successor.id){
-
-	} else{
-	
-	
-	}
-
-}
-
-func listen(p *int) {
-	http.HandleFunc("/", func(w http.ResponseWriter, request *http.Request) {
-		var dat Communication
-
-		if request.Body == nil {
-			http.Error(w, "Please send a request body", 400)
+		case "lookup":
+			lookup()
+		case "storefile":
+			store_file()
+		case "printstate":
+			print_state(&n)
+		case "exit":
 			return
 		}
-
-		err := json.Unmarshal(bufio.NewReader(request.Body), &dat)
-		if err != nil {
-			http.Error(w, err.Error(), 400)
-			return
-		}
-
-		switch dat.function {
-		case "find_successor":
-			find_successor(, dat.id)
-		}
-
-	})
-
-	err := http.ListenAndServe(":"+string(*p), nil)
-	if err != nil {
-		fmt.Println(err)
 	}
-}
-
-func handler() {
 
 }
 
-func stabilize(tc *int) {
-	return
+/***** Find successor *****/
+
+func find_successor(currentAddress string, successorAddress string,
+	returnAddress string) {
+
+	c := hash_string(currentAddress)
+	s := hash_string(successorAddress)
+	r := hash_string(returnAddress)
+
+	// TODO: Fix case where new node is between largest and smallest node (wrap around the circle)
+
+	// If r is between c and s, or if successor wraps around
+	if (r > c && r <= s) || (s <= c && r != c) {
+		// The return- is between current- and successor- address' -> found successor
+		sendMessage(returnAddress, "recieve_successor", successorAddress, "")
+	} else {
+		// Iteratively send find_successor to next node to continue searching
+		sendMessage(successorAddress, "find_successor", returnAddress, "")
+	}
+
 }
 
-func fix_fingers(tff *int) {
-	return
+// Recieves the final successor directly from final node
+// - Not secure at all since bad actors could send anything and we just accept
+func recieve_successor(n *Node, successorAddress string) {
+	n.Successor = successorAddress
+	fmt.Println("Recieved successor at: ", successorAddress)
 }
 
-func check_predecessor(tcp *int) {
-	return
-}
+/***** Command line commands *****/
 
 func lookup() {
 	return
@@ -186,9 +155,101 @@ func store_file() {
 	return
 }
 
-func print_state() {
+func print_state(n *Node) {
+	fmt.Println(n.Predecessor, " -> (", n.Address, ") -> ", n.Successor)
+}
+
+/***** Fix ring *****/
+
+func stabilize(tc *int) {
+	// wait tc milliseconds
 	return
 }
+
+func fix_fingers(tff *int) {
+	// wait tff milliseconds
+	return
+}
+
+func check_predecessor(tcp *int) {
+	// wait tcp milliseconds
+	return
+}
+
+/***** Networking *****/
+
+func listen(n *Node, p *int) {
+	// Listen on port p
+	listner, err := net.Listen("tcp", ":"+fmt.Sprint(*p))
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	for {
+		conn, err := listner.Accept()
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+		go handler(n, conn)
+	}
+}
+
+func handler(n *Node, conn net.Conn) {
+	defer conn.Close()
+
+	var message Communication
+	decoder := json.NewDecoder(conn)
+
+	// Decode the message into a Communication struct
+	err := decoder.Decode(&message)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	// Process message
+	fmt.Println("Recieved message: ", message)
+
+	switch message.Function {
+	case "recieve_successor":
+		// Var1 is the successorAddress
+		recieve_successor(n, message.Var1)
+	case "find_successor":
+		// Var1 is the returnAddress
+		find_successor(n.Address, n.Successor, message.Var1)
+
+	}
+}
+
+func sendMessage(address string, function string, var1 string, var2 string) {
+	msg := Communication{
+		Function: function,
+		Var1:     var1,
+		Var2:     var2,
+	}
+
+	// Dial up the node at address
+	conn, err := net.Dial("tcp", address)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer conn.Close()
+
+	// Encode message as json bytes
+	data, err := json.Marshal(msg)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	// Send message
+	conn.Write(data)
+
+	fmt.Println("Sent message: ", fmt.Sprint(msg))
+}
+
+/***** Hashing *****/
 
 func hash(str string) *big.Int {
 	hasher := sha1.New()
@@ -197,19 +258,8 @@ func hash(str string) *big.Int {
 }
 
 func hash_string(str string) string {
-
 	h := sha1.New()
 	h.Write([]byte(str))
 	sha1_hash := hex.EncodeToString(h.Sum(nil))
 	return sha1_hash
 }
-
-// ask node n to find the successor of id
-//func find_successor(id) {
-//	if finger_table[id] {
-//		return successor
-//	} else {
-//		// forward the query around the circle
-//		return successor.find_successor(id)
-//	}
-//}
