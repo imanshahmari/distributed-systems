@@ -15,11 +15,12 @@ import (
 /*
 Done:
 	- The find_successor always uses the hashed address, change to use id defined in terminal flag. This means changeing how the networking is done and also the comparison in find_successor. Do we need to store the successor id in our Node??
+	- Change n.Successor to a list??
+	- Initialize n.Successors and n.FingerTable correctly
+	- Implement closest_preceeding_node and update find_successor
 
 
 TODOs:
-   - Change n.Successor to a list??
-   - Initialize n.Successors and n.FingerTable correctly
    - Change how the networking works to be call then response, ie. where it returns a value or a forwarding address (might be better for security later)
    - Implement stabilize (add networking method get_predecessor)
    - Implement notify (add networking method recieved_notify)
@@ -44,7 +45,7 @@ type Node struct {
 	NodeData
 	FingerTable []NodeData
 	Predecessor NodeData
-	Successor   NodeData
+	Successor   []NodeData
 
 	Bucket map[string]string
 }
@@ -89,6 +90,8 @@ func main() {
 	n := Node{}
 	n.Addr = NodeAddress(*a + ":" + fmt.Sprint(*p))
 	n.Bucket = make(map[string]string)
+	n.Successor = make([]NodeData, *r)
+	n.FingerTable = make([]NodeData, 256)
 
 	if *i == "" {
 		// If the id is not defined by comand line argument, generate it from hashing ip and port
@@ -109,9 +112,9 @@ func main() {
 	fmt.Println("Chord server started on adress: ", n.Addr, " with id: ", n.Id)
 
 	// Start a go routine for each of the steps to make the network consistent
-	go stabilize(ts)
-	go fix_fingers(tff)
-	go check_predecessor(tcp)
+	go stabilize(&n, ts)
+	go fix_fingers(&n, tff)
+	go check_predecessor(&n, tcp)
 
 	// Handle command line commands
 	commandLine(&n)
@@ -121,55 +124,111 @@ func main() {
 
 func find_successor(n *Node, searchId Key, returnAddress NodeAddress) {
 	curr := n.Id
-	succ := n.Successor.Id
-	succAddr := n.Successor.Addr
+	succ := n.Successor[0].Id
+	succAddr := n.Successor[0].Addr
 
 	// If r is between c and s, or if successor wraps around
-	if (searchId > curr && searchId <= succ) || (succ <= curr && (searchId > curr || searchId < succ)) {
+	if succ != "" &&
+		((searchId > curr && searchId <= succ) ||
+			(succ <= curr && (curr < searchId || searchId < succ))) {
 		// The return- is between current- and successor- address' -> found successor
 		sendMessage(returnAddress, "recieve_successor", succ, succAddr)
 
-	} else if searchId == curr {
-		// Not needed but more efficient as it does not need to go around the whole ring
-		sendMessage(returnAddress, "recieve_successor", curr, succAddr)
 	} else {
 		// Iteratively send find_successor to next node to continue searching
-		sendMessage(succAddr, "find_successor", searchId, returnAddress)
+		closestPrecNode := closest_preceding_node(n, searchId)
+		sendMessage(closestPrecNode.Addr, "find_successor", searchId, returnAddress)
 	}
 
+}
+
+// search the local table for the highest predecessor of id
+/*
+n.closest preceding node(id)
+for i = m downto 1
+	if (finger[i] ∈ (n,id))
+		return finger[i];
+return n;
+*/
+func closest_preceding_node(n *Node, id Key) NodeData {
+	for i := 255; i >= 0; i-- {
+		finger := n.FingerTable[i]
+
+		if n.Id < finger.Id && finger.Id > id {
+			return finger
+		}
+	}
+	// Will probably crash if it comes here, but will not come here (???) as this case is the first part of the if-statement in find_successor
+	return n.NodeData
 }
 
 // Recieves the final successor directly from final node
 // - Not secure at all since bad actors could send anything and we just accept
 func recieve_successor(n *Node, SuccessorId Key, successorAddress NodeAddress) {
-	n.Successor.Id = SuccessorId
-	n.Successor.Addr = successorAddress
+	n.Successor[0].Id = SuccessorId
+	n.Successor[0].Addr = successorAddress
 	fmt.Println("Recieved successor at: ", successorAddress)
 }
+
+// create a new Chord ring
 func create(n *Node) {
-	n.Successor.Addr = n.Addr
+	n.Successor[0] = n.NodeData
 }
 
+// join a Chord ring containing node n' (ja, jp)
 func join(n *Node, ja *string, jp *int) {
-
+	n.Successor[0].Addr = NodeAddress(*ja + ":" + fmt.Sprint(*jp))
 	find_successor(n, n.Id, n.Addr)
-
 	//find_successor(n.Addr, *ja+":"+fmt.Sprint(*jp), n.Addr)
 }
 
 /***** Fix ring *****/
 
-func stabilize(tc *int) {
+// called periodically. verifies n’s immediate
+// successor, and tells the successor about n.
+/*
+x = successor.predecessor;
+if (x ∈ (n,successor))
+successor = x;
+successor.notify(n);
+*/
+func stabilize(n *Node, tc *int) {
 	// wait tc milliseconds
 
 }
 
-func fix_fingers(tff *int) {
+// n' thinks it might be our predecessor.
+/*
+if (predecessor is nil or n' ∈ (predecessor, n))
+predecessor = n';
+*/
+func notify(n *Node, n_prime NodeData) {
+	if n.Predecessor.Addr == "" || n.Predecessor.Id == "" ||
+		n.Predecessor.Id < n_prime.Id {
+
+	}
+}
+
+// called periodically. refreshes finger table entries.
+// next stores the index of the next finger to fix.
+/*
+next = next + 1 ;
+if (next > m)
+next = 1 ;
+finger[next] = find successor(n + 2^(next−1) );
+*/
+func fix_fingers(n *Node, tff *int) {
+	//for i := 0; i < 256; i++ {
+
+	//	n.FingerTable[i] = find_successor(n, n.Id+2**(i), n.Addr)
+	//}
+
 	// wait tff milliseconds
 
 }
 
-func check_predecessor(tcp *int) {
+// called periodically. checks whether predecessor has failed
+func check_predecessor(n *Node, tcp *int) {
 	// wait tcp milliseconds
 
 }
@@ -193,7 +252,8 @@ func commandLine(n *Node) {
 			fmt.Print("Enter address of successor: ")
 
 			address, _ := reader.ReadString('\n')
-			n.Successor.Addr = NodeAddress(address[:len(address)-1])
+			n.Successor[0].Addr = NodeAddress(address[:len(address)-1])
+			n.Successor[0].Id = hash_addr(n.Successor[0].Addr)
 
 			print_state(n)
 		case "setpredecessor", "pre":
@@ -202,6 +262,7 @@ func commandLine(n *Node) {
 
 			address, _ := reader.ReadString('\n')
 			n.Predecessor.Addr = NodeAddress(address[:len(address)-1])
+			n.Predecessor.Id = hash_addr(n.Predecessor.Addr)
 
 			print_state(n)
 		case "lookup", "l":
@@ -237,20 +298,24 @@ func store_file() {
 }
 
 func print_state(n *Node) {
-	fmt.Println(n.Predecessor, "-> (", n.Addr, ") ->", n.Successor)
+	fmt.Println(n.Predecessor.Addr, "-> (", n.Addr, ") ->", n.Successor[0].Addr)
 
-	p := hash_addr(n.Predecessor.Addr)
-	a := hash_addr(n.Addr)
-	s := hash_addr(n.Successor.Addr)
+	p := n.Predecessor.Id
+	a := n.Id
+	s := n.Successor[0].Id
 
-	if p != "" {
-		p = p[:len(p)-30]
-	} else {
-		p = "          "
+	if len(p) > 30 {
+		p = p[:len(p)-30] + "... "
+	}
+	if len(a) > 30 {
+		a = a[:len(a)-30] + "... "
+	}
+	if len(s) > 30 {
+		s = s[:len(s)-30] + "... "
 	}
 
 	// Print first part of hashvalues to see if they are in order
-	fmt.Println(p, "... -> (", a[:len(a)-30], "... ) ->", s[:len(s)-30], "...")
+	fmt.Println(p + " -> ( " + a + " ) -> " + s)
 }
 
 /***** Networking *****/
@@ -286,7 +351,7 @@ func handler(n *Node, conn net.Conn) {
 	}
 
 	// Process message
-	fmt.Println("Recieved message: ", message)
+	fmt.Println("$> Recieved message: ", message)
 
 	switch message.Function {
 	case "recieve_successor":
@@ -323,7 +388,7 @@ func sendMessage(address NodeAddress, function string, Id Key, Addr NodeAddress)
 	// Send message
 	conn.Write(data)
 
-	fmt.Println("Sent message: ", fmt.Sprint(msg))
+	fmt.Println("$> Sent message: ", fmt.Sprint(msg))
 }
 
 /***** Hashing *****/
