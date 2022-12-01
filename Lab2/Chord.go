@@ -7,16 +7,20 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"math/big"
 	"net"
 	"os"
 	"strings"
 )
 
-/* TODOs:
-   - The find_successor always uses the hashed address, change to use id defined in terminal flag. This means changeing how the networking is done and also the comparison in find_successor. Do we need to store the successor id in our Node??
+/*
+Done:
+	- The find_successor always uses the hashed address, change to use id defined in terminal flag. This means changeing how the networking is done and also the comparison in find_successor. Do we need to store the successor id in our Node??
+
+
+TODOs:
    - Change n.Successor to a list??
    - Initialize n.Successors and n.FingerTable correctly
+   - Change how the networking works to be call then response, ie. where it returns a value or a forwarding address (might be better for security later)
    - Implement stabilize (add networking method get_predecessor)
    - Implement notify (add networking method recieved_notify)
    - Implement fix_fingers (does find_successor need changes??)
@@ -31,21 +35,25 @@ type Key string
 
 type NodeAddress string
 
+type NodeData struct {
+	Id   Key
+	Addr NodeAddress
+}
+
 type Node struct {
-	Id          string
-	Address     string
-	FingerTable []string
-	Predecessor string
-	Successor   string
+	NodeData
+	FingerTable []NodeData
+	Predecessor NodeData
+	Successor   NodeData
 
 	Bucket map[string]string
 }
 
 // struct to decode json into
 type Communication struct {
-	Function string `json:"function"`
-	Var1     string `json:"var1"`
-	Var2     string `json:"var2"`
+	Function string      `json:"function"`
+	Id       Key         `json:"id"`
+	Addr     NodeAddress `json:"addr"`
 }
 
 func main() {
@@ -78,16 +86,15 @@ func main() {
 		return
 	}
 
-	n := Node{
-		Address: *a + ":" + fmt.Sprint(*p),
-		Bucket:  make(map[string]string),
-	}
+	n := Node{}
+	n.Addr = NodeAddress(*a + ":" + fmt.Sprint(*p))
+	n.Bucket = make(map[string]string)
 
 	if *i == "" {
 		// If the id is not defined by comand line argument, generate it from hashing ip and port
-		n.Id = hash_string(n.Address)
+		n.Id = hash_addr(n.Addr)
 	} else {
-		n.Id = *i
+		n.Id = Key(*i)
 	}
 
 	// Create a new Chord ring if there is no --ja defined otherwise join
@@ -99,7 +106,7 @@ func main() {
 
 	// Start listening to incoming connections from other nodes
 	go listen(&n, p)
-	fmt.Println("Chord server started on adress: ", n.Address, " with id: ", n.Id)
+	fmt.Println("Chord server started on adress: ", n.Addr, " with id: ", n.Id)
 
 	// Start a go routine for each of the steps to make the network consistent
 	go stabilize(ts)
@@ -112,36 +119,42 @@ func main() {
 
 /***** Chord functions *****/
 
-func find_successor(currentAddress string, successorAddress string,
-	returnAddress string) {
-
-	c := hash_string(currentAddress)
-	s := hash_string(successorAddress)
-	r := hash_string(returnAddress)
+func find_successor(n *Node, searchId Key, returnAddress NodeAddress) {
+	curr := n.Id
+	succ := n.Successor.Id
+	succAddr := n.Successor.Addr
 
 	// If r is between c and s, or if successor wraps around
-	if (r > c && r <= s) || (s <= c && r > c) {
+	if (searchId > curr && searchId <= succ) || (succ <= curr && (searchId > curr || searchId < succ)) {
 		// The return- is between current- and successor- address' -> found successor
-		sendMessage(returnAddress, "recieve_successor", successorAddress, "")
+		sendMessage(returnAddress, "recieve_successor", succ, succAddr)
+
+	} else if searchId == curr {
+		// Not needed but more efficient as it does not need to go around the whole ring
+		sendMessage(returnAddress, "recieve_successor", curr, succAddr)
 	} else {
 		// Iteratively send find_successor to next node to continue searching
-		sendMessage(successorAddress, "find_successor", returnAddress, "")
+		sendMessage(succAddr, "find_successor", searchId, returnAddress)
 	}
 
 }
 
 // Recieves the final successor directly from final node
 // - Not secure at all since bad actors could send anything and we just accept
-func recieve_successor(n *Node, successorAddress string) {
-	n.Successor = successorAddress
+func recieve_successor(n *Node, SuccessorId Key, successorAddress NodeAddress) {
+	n.Successor.Id = SuccessorId
+	n.Successor.Addr = successorAddress
 	fmt.Println("Recieved successor at: ", successorAddress)
 }
 func create(n *Node) {
-	n.Successor = n.Address
+	n.Successor.Addr = n.Addr
 }
 
 func join(n *Node, ja *string, jp *int) {
-	find_successor(n.Address, *ja+":"+fmt.Sprint(*jp), n.Address)
+
+	find_successor(n, n.Id, n.Addr)
+
+	//find_successor(n.Addr, *ja+":"+fmt.Sprint(*jp), n.Addr)
 }
 
 /***** Fix ring *****/
@@ -180,7 +193,7 @@ func commandLine(n *Node) {
 			fmt.Print("Enter address of successor: ")
 
 			address, _ := reader.ReadString('\n')
-			n.Successor = address[:len(address)-1]
+			n.Successor.Addr = NodeAddress(address[:len(address)-1])
 
 			print_state(n)
 		case "setpredecessor", "pre":
@@ -188,7 +201,7 @@ func commandLine(n *Node) {
 			fmt.Print("Enter address of predecessor: ")
 
 			address, _ := reader.ReadString('\n')
-			n.Predecessor = address[:len(address)-1]
+			n.Predecessor.Addr = NodeAddress(address[:len(address)-1])
 
 			print_state(n)
 		case "lookup", "l":
@@ -224,14 +237,20 @@ func store_file() {
 }
 
 func print_state(n *Node) {
-	fmt.Println(n.Predecessor, "-> (", n.Address, ") ->", n.Successor)
+	fmt.Println(n.Predecessor, "-> (", n.Addr, ") ->", n.Successor)
 
-	p := hash_string(n.Predecessor)
-	a := hash_string(n.Address)
-	s := hash_string(n.Successor)
+	p := hash_addr(n.Predecessor.Addr)
+	a := hash_addr(n.Addr)
+	s := hash_addr(n.Successor.Addr)
+
+	if p != "" {
+		p = p[:len(p)-30]
+	} else {
+		p = "          "
+	}
 
 	// Print first part of hashvalues to see if they are in order
-	fmt.Println(p[:len(p)-30], "... -> (", a[:len(a)-30], "... ) ->", s[:len(s)-30], "...")
+	fmt.Println(p, "... -> (", a[:len(a)-30], "... ) ->", s[:len(s)-30], "...")
 }
 
 /***** Networking *****/
@@ -271,24 +290,24 @@ func handler(n *Node, conn net.Conn) {
 
 	switch message.Function {
 	case "recieve_successor":
-		// Var1 is the successorAddress
-		recieve_successor(n, message.Var1)
+		// Id is the successor Id and Addr is the successor address
+		recieve_successor(n, message.Id, message.Addr)
 	case "find_successor":
-		// Var1 is the returnAddress
-		find_successor(n.Address, n.Successor, message.Var1)
+		// Id is the searchId and Addr is the returnAddress
+		find_successor(n, message.Id, message.Addr)
 
 	}
 }
 
-func sendMessage(address string, function string, var1 string, var2 string) {
+func sendMessage(address NodeAddress, function string, Id Key, Addr NodeAddress) {
 	msg := Communication{
 		Function: function,
-		Var1:     var1,
-		Var2:     var2,
+		Id:       Id,
+		Addr:     Addr,
 	}
 
 	// Dial up the node at address
-	conn, err := net.Dial("tcp", address)
+	conn, err := net.Dial("tcp", string(address))
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -309,10 +328,14 @@ func sendMessage(address string, function string, var1 string, var2 string) {
 
 /***** Hashing *****/
 
-func hash(str string) *big.Int {
+/*func hash(str string) *big.Int {
 	hasher := sha1.New()
 	hasher.Write([]byte(str))
 	return new(big.Int).SetBytes(hasher.Sum(nil))
+}*/
+
+func hash_addr(a NodeAddress) Key {
+	return Key(hash_string(string(a)))
 }
 
 func hash_string(str string) string {
