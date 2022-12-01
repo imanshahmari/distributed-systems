@@ -47,14 +47,14 @@ type Node struct {
 	Predecessor NodeData
 	Successor   []NodeData
 
-	Bucket map[string]string
+	Bucket map[Key]string
 }
 
 // struct to decode json into
 type Communication struct {
-	Function string      `json:"function"`
-	Id       Key         `json:"id"`
-	Addr     NodeAddress `json:"addr"`
+	Function string   `json:"function"`
+	Node     NodeData `json:"successor"`
+	Final    bool     `json:"final"`
 }
 
 func main() {
@@ -122,22 +122,27 @@ func main() {
 
 /***** Chord functions *****/
 
-func find_successor(n *Node, searchId Key, returnAddress NodeAddress) {
+func find_successor(n *Node, searchId Key) (NodeData, bool) {
 	curr := n.Id
 	succ := n.Successor[0].Id
-	succAddr := n.Successor[0].Addr
+	//succAddr := n.Successor[0].Addr
 
 	// If r is between c and s, or if successor wraps around
 	if succ != "" &&
 		((searchId > curr && searchId <= succ) ||
 			(succ <= curr && (curr < searchId || searchId < succ))) {
 		// The return- is between current- and successor- address' -> found successor
-		sendMessage(returnAddress, "recieve_successor", succ, succAddr)
+		//sendMessage(returnAddress, "recieve_successor", succ, succAddr)
+		return n.Successor[0], true
 
 	} else {
 		// Iteratively send find_successor to next node to continue searching
 		closestPrecNode := closest_preceding_node(n, searchId)
-		sendMessage(closestPrecNode.Addr, "find_successor", searchId, returnAddress)
+
+		return sendMessage(closestPrecNode.Addr, "find_successor", NodeData{
+			Id: searchNodeAddress(searchId),
+			Addr: ,
+		}), false
 	}
 
 }
@@ -164,11 +169,11 @@ func closest_preceding_node(n *Node, id Key) NodeData {
 
 // Recieves the final successor directly from final node
 // - Not secure at all since bad actors could send anything and we just accept
-func recieve_successor(n *Node, SuccessorId Key, successorAddress NodeAddress) {
+/*func recieve_successor(n *Node, SuccessorId Key, successorAddress NodeAddress) {
 	n.Successor[0].Id = SuccessorId
 	n.Successor[0].Addr = successorAddress
 	fmt.Println("Recieved successor at: ", successorAddress)
-}
+}*/
 
 // create a new Chord ring
 func create(n *Node) {
@@ -203,10 +208,16 @@ if (predecessor is nil or n' ∈ (predecessor, n))
 predecessor = n';
 */
 func notify(n *Node, n_prime NodeData) {
-	if n.Predecessor.Addr == "" || n.Predecessor.Id == "" ||
-		n.Predecessor.Id < n_prime.Id {
+	/*
+		if n.Predecessor.Addr == "" || n.Predecessor.Id == "" || n.Predecessor.Id < n_prime.Id {
+
+		}
+	*/
+	if n.Predecessor.Addr == "" || n.Predecessor.Id == "" || (n.Predecessor.Id < n_prime.Id && n_prime.Id < n.Id) {
+		n.Predecessor = n_prime
 
 	}
+
 }
 
 // called periodically. refreshes finger table entries.
@@ -354,28 +365,40 @@ func handler(n *Node, conn net.Conn) {
 	fmt.Println("$> Recieved message: ", message)
 
 	switch message.Function {
-	case "recieve_successor":
-		// Id is the successor Id and Addr is the successor address
-		recieve_successor(n, message.Id, message.Addr)
+	//case "recieve_successor":
+	// Id is the successor Id and Addr is the successor address
+	//	recieve_successor(n, message.Id, message.Addr)
 	case "find_successor":
 		// Id is the searchId and Addr is the returnAddress
-		find_successor(n, message.Id, message.Addr)
+		succ, final := find_successor(n, message.Node.Id, message.Node.Addr)
 
+		msg := Communication{
+			Function: "res_find_successor",
+			Node:     succ,
+			Final:    final,
+		}
+
+		// Encode message as json bytes
+		data, err := json.Marshal(msg)
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		conn.Write(data)
 	}
 }
 
-func sendMessage(address NodeAddress, function string, Id Key, Addr NodeAddress) {
+func sendMessage(address NodeAddress, function string, n NodeData) NodeData {
 	msg := Communication{
 		Function: function,
-		Id:       Id,
-		Addr:     Addr,
+		Node:     n,
 	}
 
 	// Dial up the node at address
 	conn, err := net.Dial("tcp", string(address))
 	if err != nil {
 		fmt.Println(err)
-		return
+		return NodeData{}
 	}
 	defer conn.Close()
 
@@ -389,6 +412,22 @@ func sendMessage(address NodeAddress, function string, Id Key, Addr NodeAddress)
 	conn.Write(data)
 
 	fmt.Println("$> Sent message: ", fmt.Sprint(msg))
+
+	// Handle response
+	var response Communication
+	decoder := json.NewDecoder(conn)
+
+	// Decode the message into a Communication struct
+	err = decoder.Decode(&response)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	if response.Final {
+		return response.Node
+	} else {
+		return sendMessage(response.Node.Addr, function, n)
+	}
 }
 
 /***** Hashing *****/
