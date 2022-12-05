@@ -1,31 +1,27 @@
 package main
 
 import (
-	"bufio"
 	"crypto/sha1"
 	"encoding/hex"
-	"encoding/json"
 	"flag"
 	"fmt"
-	"net"
-	"os"
-	"strings"
 )
 
 /*
 Done:
-	- The find_successor always uses the hashed address, change to use id defined in terminal flag. This means changeing how the networking is done and also the comparison in find_successor. Do we need to store the successor id in our Node??
+	- The findSuccessor always uses the hashed address, change to use id defined in terminal flag. This means changeing how the networking is done and also the comparison in findSuccessor. Do we need to store the successor id in our Node??
 	- Change n.Successor to a list??
 	- Initialize n.Successors and n.FingerTable correctly
-	- Implement closest_preceeding_node and update find_successor
+	- Implement closestPreceedingNode and update findSuccessor
+	- Change how the networking works to be call then response, ie. where it returns a value or a forwarding address (might be better for security later)
+	- Convert all underscore_names to camelCasing
 
 
 TODOs:
-   - Change how the networking works to be call then response, ie. where it returns a value or a forwarding address (might be better for security later)
-   - Implement stabilize (add networking method get_predecessor)
-   - Implement notify (add networking method recieved_notify)
-   - Implement fix_fingers (does find_successor need changes??)
-   - Implement check_predecessor  (add networking method recieved_ping (ie responds back with OK message if alive))
+   - Implement stabilize (add networking method getPredecessor)
+   - Implement notify (add networking method handleNotify)
+   - Implement fixFingers (does findSuccessor need changes??)
+   - Implement checkPredecessor  (add networking method handlePing (ie responds back with OK message if alive))
    - Pass in all flags to Chord via docker (can you do all in one env variable)
    - Update readme
 
@@ -36,25 +32,18 @@ type Key string
 
 type NodeAddress string
 
-type NodeData struct {
+type Node struct {
 	Id   Key
 	Addr NodeAddress
 }
 
-type Node struct {
-	NodeData
-	FingerTable []NodeData
-	Predecessor NodeData
-	Successor   []NodeData
+type ThisNode struct {
+	Node
+	FingerTable []Node
+	Predecessor Node
+	Successor   []Node
 
 	Bucket map[Key]string
-}
-
-// struct to decode json into
-type Communication struct {
-	Function string   `json:"function"`
-	Node     NodeData `json:"successor"`
-	Final    bool     `json:"final"`
 }
 
 func main() {
@@ -87,15 +76,15 @@ func main() {
 		return
 	}
 
-	n := Node{}
+	n := ThisNode{}
 	n.Addr = NodeAddress(*a + ":" + fmt.Sprint(*p))
-	n.Bucket = make(map[string]string)
-	n.Successor = make([]NodeData, *r)
-	n.FingerTable = make([]NodeData, 256)
+	n.Bucket = make(map[Key]string)
+	n.Successor = make([]Node, *r)
+	n.FingerTable = make([]Node, 256)
 
 	if *i == "" {
 		// If the id is not defined by comand line argument, generate it from hashing ip and port
-		n.Id = hash_addr(n.Addr)
+		n.Id = hashAddress(n.Addr)
 	} else {
 		n.Id = Key(*i)
 	}
@@ -108,13 +97,13 @@ func main() {
 	}
 
 	// Start listening to incoming connections from other nodes
-	go listen(&n, p)
+	go listen(&n, *p)
 	fmt.Println("Chord server started on adress: ", n.Addr, " with id: ", n.Id)
 
 	// Start a go routine for each of the steps to make the network consistent
 	go stabilize(&n, ts)
-	go fix_fingers(&n, tff)
-	go check_predecessor(&n, tcp)
+	go fixFingers(&n, tff)
+	go checkPredecessor(&n, tcp)
 
 	// Handle command line commands
 	commandLine(&n)
@@ -122,7 +111,40 @@ func main() {
 
 /***** Chord functions *****/
 
-func find_successor(n *Node, searchId Key) (NodeData, bool) {
+// create a new Chord ring
+func create(n *ThisNode) {
+	n.Successor[0] = n.Node
+}
+
+// join a Chord ring containing node n' (ja, jp)
+func join(n *ThisNode, ja *string, jp *int) {
+	n.Successor[0].Addr = NodeAddress(*ja + ":" + fmt.Sprint(*jp))
+	findSuccessor(n, n.Id)
+}
+
+func findSuccessor(n *ThisNode, searchId Key) Node {
+	// Try to find in this node
+	succ, isRelayAddress := findSuccessorIteration(n, searchId)
+
+	// If relay then repeat while we still get relay adresses to the next node
+	for isRelayAddress {
+		c, err := getFindSuccessor(succ.Addr, string(searchId))
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		succ, isRelayAddress = c.Node, c.IsRelayAddr
+	}
+
+	// When it no longer relays we have the successor to the id
+	return succ
+}
+
+/* This function only finds the immediate successor and does not handle
+ * recursion/iteration as it has to be able to be called from both
+ * findSuccessor and from networking calls
+ */
+func findSuccessorIteration(n *ThisNode, searchId Key) (Node, bool) {
 	curr := n.Id
 	succ := n.Successor[0].Id
 	//succAddr := n.Successor[0].Addr
@@ -132,30 +154,18 @@ func find_successor(n *Node, searchId Key) (NodeData, bool) {
 		((searchId > curr && searchId <= succ) ||
 			(succ <= curr && (curr < searchId || searchId < succ))) {
 		// The return- is between current- and successor- address' -> found successor
-		//sendMessage(returnAddress, "recieve_successor", succ, succAddr)
-		return n.Successor[0], true
+		return n.Successor[0], false
 
 	} else {
-		// Iteratively send find_successor to next node to continue searching
-		closestPrecNode := closest_preceding_node(n, searchId)
+		// Iteratively send findSuccessor to next node to continue searching
+		closestPrecNode := closestPrecedingNode(n, searchId)
 
-		return sendMessage(closestPrecNode.Addr, "find_successor", NodeData{
-			Id: searchNodeAddress(searchId),
-			Addr: ,
-		}), false
+		return closestPrecNode, true
 	}
-
 }
 
 // search the local table for the highest predecessor of id
-/*
-n.closest preceding node(id)
-for i = m downto 1
-	if (finger[i] ∈ (n,id))
-		return finger[i];
-return n;
-*/
-func closest_preceding_node(n *Node, id Key) NodeData {
+func closestPrecedingNode(n *ThisNode, id Key) Node {
 	for i := 255; i >= 0; i-- {
 		finger := n.FingerTable[i]
 
@@ -163,28 +173,8 @@ func closest_preceding_node(n *Node, id Key) NodeData {
 			return finger
 		}
 	}
-	// Will probably crash if it comes here, but will not come here (???) as this case is the first part of the if-statement in find_successor
-	return n.NodeData
-}
-
-// Recieves the final successor directly from final node
-// - Not secure at all since bad actors could send anything and we just accept
-/*func recieve_successor(n *Node, SuccessorId Key, successorAddress NodeAddress) {
-	n.Successor[0].Id = SuccessorId
-	n.Successor[0].Addr = successorAddress
-	fmt.Println("Recieved successor at: ", successorAddress)
-}*/
-
-// create a new Chord ring
-func create(n *Node) {
-	n.Successor[0] = n.NodeData
-}
-
-// join a Chord ring containing node n' (ja, jp)
-func join(n *Node, ja *string, jp *int) {
-	n.Successor[0].Addr = NodeAddress(*ja + ":" + fmt.Sprint(*jp))
-	find_successor(n, n.Id, n.Addr)
-	//find_successor(n.Addr, *ja+":"+fmt.Sprint(*jp), n.Addr)
+	// Will probably crash if it comes here, but will not come here (???) as this case is the first part of the if-statement in findSuccessor
+	return n.Node
 }
 
 /***** Fix ring *****/
@@ -197,7 +187,7 @@ if (x ∈ (n,successor))
 successor = x;
 successor.notify(n);
 */
-func stabilize(n *Node, tc *int) {
+func stabilize(n *ThisNode, tc *int) {
 	// wait tc milliseconds
 
 }
@@ -207,14 +197,14 @@ func stabilize(n *Node, tc *int) {
 if (predecessor is nil or n' ∈ (predecessor, n))
 predecessor = n';
 */
-func notify(n *Node, n_prime NodeData) {
+func notify(n *ThisNode, nPrime Node) {
 	/*
-		if n.Predecessor.Addr == "" || n.Predecessor.Id == "" || n.Predecessor.Id < n_prime.Id {
+		if n.Predecessor.Addr == "" || n.Predecessor.Id == "" || n.Predecessor.Id < nPrime.Id {
 
 		}
 	*/
-	if n.Predecessor.Addr == "" || n.Predecessor.Id == "" || (n.Predecessor.Id < n_prime.Id && n_prime.Id < n.Id) {
-		n.Predecessor = n_prime
+	if n.Predecessor.Addr == "" || n.Predecessor.Id == "" || (n.Predecessor.Id < nPrime.Id && nPrime.Id < n.Id) {
+		n.Predecessor = nPrime
 
 	}
 
@@ -228,10 +218,10 @@ if (next > m)
 next = 1 ;
 finger[next] = find successor(n + 2^(next−1) );
 */
-func fix_fingers(n *Node, tff *int) {
+func fixFingers(n *ThisNode, tff *int) {
 	//for i := 0; i < 256; i++ {
 
-	//	n.FingerTable[i] = find_successor(n, n.Id+2**(i), n.Addr)
+	//	n.FingerTable[i] = findSuccessor(n, n.Id+2**(i), n.Addr)
 	//}
 
 	// wait tff milliseconds
@@ -239,210 +229,27 @@ func fix_fingers(n *Node, tff *int) {
 }
 
 // called periodically. checks whether predecessor has failed
-func check_predecessor(n *Node, tcp *int) {
-	// wait tcp milliseconds
+func checkPredecessor(n *ThisNode, tcp *int) {
+	// TODO: wait tcp milliseconds
+	// TODO: what to do when predecessor has failed???
 
-}
-
-/***** Command line commands *****/
-
-func commandLine(n *Node) {
-	for {
-		// Read from cmd
-		reader := bufio.NewReader(os.Stdin)
-		//fmt.Print("Enter command: ")
-		input, _ := reader.ReadString('\n')
-
-		// Format string (remove newline and to lower case letters)
-		input = strings.ToLower(input[:len(input)-1])
-		//fmt.Println(input)
-
-		switch input {
-		case "setsuccessor", "succ", "s":
-			reader := bufio.NewReader(os.Stdin)
-			fmt.Print("Enter address of successor: ")
-
-			address, _ := reader.ReadString('\n')
-			n.Successor[0].Addr = NodeAddress(address[:len(address)-1])
-			n.Successor[0].Id = hash_addr(n.Successor[0].Addr)
-
-			print_state(n)
-		case "setpredecessor", "pre":
-			reader := bufio.NewReader(os.Stdin)
-			fmt.Print("Enter address of predecessor: ")
-
-			address, _ := reader.ReadString('\n')
-			n.Predecessor.Addr = NodeAddress(address[:len(address)-1])
-			n.Predecessor.Id = hash_addr(n.Predecessor.Addr)
-
-			print_state(n)
-		case "lookup", "l":
-			lookup()
-		case "storefile", "file", "f":
-			store_file()
-		case "printstate", "p":
-			print_state(n)
-		case "exit", "x":
-			os.Exit(0)
-		case "help", "h", "man":
-			fallthrough
-		default:
-			fmt.Print(
-				"setsuccessor, succ, s - asks for and sets the successor address\n",
-				"setpredecessor, pre - asks for and sets the predecessor address\n",
-				"lookup, l - finds the address of a resource\n",
-				"storefile, file, f - stores a file in the network\n",
-				"printstate, p - prints the state of the node\n",
-				"exit, x - terminates the node\n",
-				"help, h, man - shows this list of accepted commands\n",
-			)
-		}
-	}
-}
-
-func lookup() {
-
-}
-
-func store_file() {
-
-}
-
-func print_state(n *Node) {
-	fmt.Println(n.Predecessor.Addr, "-> (", n.Addr, ") ->", n.Successor[0].Addr)
-
-	p := n.Predecessor.Id
-	a := n.Id
-	s := n.Successor[0].Id
-
-	if len(p) > 30 {
-		p = p[:len(p)-30] + "... "
-	}
-	if len(a) > 30 {
-		a = a[:len(a)-30] + "... "
-	}
-	if len(s) > 30 {
-		s = s[:len(s)-30] + "... "
-	}
-
-	// Print first part of hashvalues to see if they are in order
-	fmt.Println(p + " -> ( " + a + " ) -> " + s)
-}
-
-/***** Networking *****/
-
-func listen(n *Node, p *int) {
-	// Listen on port p
-	listner, err := net.Listen("tcp", ":"+fmt.Sprint(*p))
+	msg, err := sendMessage(n.Predecessor.Addr, HandlePing, "")
 	if err != nil {
-		fmt.Println(err)
-		return
+		fmt.Println("Predecessor has failed", err)
 	}
 
-	for {
-		conn, err := listner.Accept()
-		if err != nil {
-			fmt.Println(err)
-			continue
-		}
-		go handler(n, conn)
-	}
-}
-
-func handler(n *Node, conn net.Conn) {
-	defer conn.Close()
-
-	var message Communication
-	decoder := json.NewDecoder(conn)
-
-	// Decode the message into a Communication struct
-	err := decoder.Decode(&message)
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	// Process message
-	fmt.Println("$> Recieved message: ", message)
-
-	switch message.Function {
-	//case "recieve_successor":
-	// Id is the successor Id and Addr is the successor address
-	//	recieve_successor(n, message.Id, message.Addr)
-	case "find_successor":
-		// Id is the searchId and Addr is the returnAddress
-		succ, final := find_successor(n, message.Node.Id, message.Node.Addr)
-
-		msg := Communication{
-			Function: "res_find_successor",
-			Node:     succ,
-			Final:    final,
-		}
-
-		// Encode message as json bytes
-		data, err := json.Marshal(msg)
-		if err != nil {
-			fmt.Println(err)
-		}
-
-		conn.Write(data)
-	}
-}
-
-func sendMessage(address NodeAddress, function string, n NodeData) NodeData {
-	msg := Communication{
-		Function: function,
-		Node:     n,
-	}
-
-	// Dial up the node at address
-	conn, err := net.Dial("tcp", string(address))
-	if err != nil {
-		fmt.Println(err)
-		return NodeData{}
-	}
-	defer conn.Close()
-
-	// Encode message as json bytes
-	data, err := json.Marshal(msg)
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	// Send message
-	conn.Write(data)
-
-	fmt.Println("$> Sent message: ", fmt.Sprint(msg))
-
-	// Handle response
-	var response Communication
-	decoder := json.NewDecoder(conn)
-
-	// Decode the message into a Communication struct
-	err = decoder.Decode(&response)
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	if response.Final {
-		return response.Node
-	} else {
-		return sendMessage(response.Node.Addr, function, n)
+	if string(msg) != "200 OK" {
+		fmt.Println("Predecessor has failed", msg)
 	}
 }
 
 /***** Hashing *****/
 
-/*func hash(str string) *big.Int {
-	hasher := sha1.New()
-	hasher.Write([]byte(str))
-	return new(big.Int).SetBytes(hasher.Sum(nil))
-}*/
-
-func hash_addr(a NodeAddress) Key {
-	return Key(hash_string(string(a)))
+func hashAddress(a NodeAddress) Key {
+	return Key(hashString(string(a)))
 }
 
-func hash_string(str string) string {
+func hashString(str string) string {
 	// No hashing of the empty string
 	if str == "" {
 		return ""
