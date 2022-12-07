@@ -16,3 +16,8 @@ runs the docker container with
 -v connects a volume on computer to docker container
 
 port number in build-arg and -p must be the same!
+
+# TO RUN the code:
+go install
+run . -a localhost -p 1135 
+
