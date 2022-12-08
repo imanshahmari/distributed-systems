@@ -81,6 +81,8 @@ func handle(n *ThisNode, conn net.Conn, wg *sync.WaitGroup) {
 
 	p := strings.Split(req.URL.Path, "/")
 
+	fmt.Println("HELLO THERE" + p[1])
+
 	// Convert first argument to
 	switch HandleFunction(p[0]) {
 	case HandleFindSucc:
@@ -123,7 +125,8 @@ func handleFindSuccessor(n *ThisNode, id Key, req *http.Request, conn net.Conn) 
 	if err != nil {
 		fmt.Println(err)
 	}
-
+	fmt.Println("HEEEEEEEEEEJ")
+	fmt.Println(string(body))
 	sendResponse(200, body, req, conn)
 }
 
@@ -220,10 +223,16 @@ func sendResponse(statusCode int, body []byte, req *http.Request, conn net.Conn)
 
 func sendMessage(address NodeAddress, function HandleFunction, msg string) ([]byte, error) {
 
+	fmt.Println("INSIDE SEND MESSAGE adress IS: " + address)
+	fmt.Println("INSIDE SEND MESSAGE function IS: " + function)
+	fmt.Println("INSIDE SEND MESSAGE msg IS: " + msg)
+
 	url := string(address) + "/" + string(function) + "/" + msg
 	fmt.Println("$> Sent: ", url)
 
 	res, err := http.Get(url)
+
+	fmt.Println("INSIDE SEND MESSAGE err IS: ", err)
 	if err != nil {
 		return nil, err
 	}
@@ -240,6 +249,9 @@ func sendMessage(address NodeAddress, function HandleFunction, msg string) ([]by
 
 // Parse the respons from findSuccessor
 func getFindSuccessor(address NodeAddress, msg string) (Communication, error) {
+	fmt.Println("Node adress IS: " + address)
+	fmt.Println("msg IS: " + msg)
+
 	body, err := sendMessage(address, HandleFindSucc, msg)
 
 	var data Communication

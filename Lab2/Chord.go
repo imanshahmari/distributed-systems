@@ -53,9 +53,9 @@ func main() {
 	p := flag.Int("p", 0, "port of client")
 	ja := flag.String("ja", "", "ip of existing node")
 	jp := flag.Int("jp", 0, "port of existing node")
-	ts := flag.Int("ts", 500, "time in ms between stabilize")
-	tff := flag.Int("tff", 500, "time in ms between fix fingers")
-	tcp := flag.Int("tcp", 500, "time in ms between check predecessor")
+	//ts := flag.Int("ts", 500, "time in ms between stabilize")
+	//tff := flag.Int("tff", 500, "time in ms between fix fingers")
+	//tcp := flag.Int("tcp", 500, "time in ms between check predecessor")
 	r := flag.Int("r", 1, "number of successors")
 	i := flag.String("i", "", "id of client (optional)")
 
@@ -93,6 +93,7 @@ func main() {
 	if *ja == "" {
 		create(&n)
 	} else {
+		fmt.Println("Joining")
 		join(&n, ja, jp)
 	}
 
@@ -101,9 +102,11 @@ func main() {
 	fmt.Println("Chord server started on adress: ", n.Addr, " with id: ", n.Id)
 
 	// Start a go routine for each of the steps to make the network consistent
-	go stabilize(&n, ts)
-	go fixFingers(&n, tff)
-	go checkPredecessor(&n, tcp)
+	/*
+		go stabilize(&n, ts)
+		go fixFingers(&n, tff)
+		go checkPredecessor(&n, tcp)
+	*/
 
 	// Handle command line commands
 	commandLine(&n)
@@ -113,12 +116,18 @@ func main() {
 
 // create a new Chord ring
 func create(n *ThisNode) {
+	fmt.Println("CREATED NODE")
 	n.Successor[0] = n.Node
 }
 
 // join a Chord ring containing node n' (ja, jp)
 func join(n *ThisNode, ja *string, jp *int) {
+	fmt.Println("TRYING TO JOIN 1")
+	// n.Predessor = nil same as doing nothing
 	n.Successor[0].Addr = NodeAddress(*ja + ":" + fmt.Sprint(*jp))
+	fmt.Println("THIS NODE ADRESS: " + n.Addr)
+	fmt.Println("FIND SUCCESSOR: " + n.Id)
+
 	findSuccessor(n, n.Id)
 }
 
@@ -128,8 +137,13 @@ func findSuccessor(n *ThisNode, searchId Key) Node {
 
 	// If relay then repeat while we still get relay adresses to the next node
 	for isRelayAddress {
+		fmt.Println("IS RELAY ACTIVE")
+		fmt.Println(isRelayAddress)
 		c, err := getFindSuccessor(succ.Addr, string(searchId))
+
+		// Unexpected end of json input
 		if err != nil {
+			fmt.Println(err)
 			fmt.Println(err)
 		}
 
@@ -147,6 +161,7 @@ func findSuccessor(n *ThisNode, searchId Key) Node {
 func findSuccessorIteration(n *ThisNode, searchId Key) (Node, bool) {
 	curr := n.Id
 	succ := n.Successor[0].Id
+	fmt.Println("SECOND NODE SUCCESSOR IS: " + succ)
 	//succAddr := n.Successor[0].Addr
 
 	// If r is between c and s, or if successor wraps around
@@ -154,13 +169,19 @@ func findSuccessorIteration(n *ThisNode, searchId Key) (Node, bool) {
 		((searchId > curr && searchId <= succ) ||
 			(succ <= curr && (curr < searchId || searchId < succ))) {
 		// The return- is between current- and successor- address' -> found successor
+		fmt.Println("VI KOMMER ALDRIG HIT")
 		return n.Successor[0], false
 
 	} else {
 		// Iteratively send findSuccessor to next node to continue searching
-		closestPrecNode := closestPrecedingNode(n, searchId)
+		fmt.Println("VI KOMMER HIT")
+		// Finger tables not implemented yet
+		/*
+			closestPrecNode := closestPrecedingNode(n, searchId)
 
-		return closestPrecNode, true
+			return closestPrecNode, true
+		*/
+		return n.Successor[0], true
 	}
 }
 
