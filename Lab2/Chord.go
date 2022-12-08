@@ -21,10 +21,14 @@ Done:
 
 
 TODOs:
-   - Successor is not saved to finger table when we join
-   - Implement fixFingers (does findSuccessor need changes??)
-   - Pass in all flags to Chord via docker (can you do all in one env variable)
-   - Update readme
+	- Add the stabilizing go routines back with an endless loop with time tc tff and tcp, handle eventual errors from not having a complete ring better than now.
+	- Successor is not saved to finger table when we join, therefore findSuccessor or lookup does not work
+	- Implement fixFingers
+	- Fix docker to create multiple servers with different ips
+	- Update readme
+	- Change http post to sftp
+	- Make secure with https
+	- Encrypt files before sending
 
    *Remember that if we need our node object n in these functions, it has to be passed in as a pointer otherwise we copy the values and it will not be changed for the rest of the functions (&n creates a pointer reference (from main()), *n uses the pointer as a value, and (n *Node) is the type to use in the function definitions)
 */
