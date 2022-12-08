@@ -15,13 +15,14 @@ Done:
 	- Implement closestPreceedingNode and update findSuccessor
 	- Change how the networking works to be call then response, ie. where it returns a value or a forwarding address (might be better for security later)
 	- Convert all underscore_names to camelCasing
+	- Implement stabilize (add networking method getPredecessor)
+	- Implement notify (add networking method handleNotify)
+	- Implement checkPredecessor  (add networking method handlePing (ie responds back with OK message if alive))
 
 
 TODOs:
-   - Implement stabilize (add networking method getPredecessor)
-   - Implement notify (add networking method handleNotify)
+   - Successor is not saved to finger table when we join
    - Implement fixFingers (does findSuccessor need changes??)
-   - Implement checkPredecessor  (add networking method handlePing (ie responds back with OK message if alive))
    - Pass in all flags to Chord via docker (can you do all in one env variable)
    - Update readme
 
@@ -53,11 +54,14 @@ func main() {
 	p := flag.Int("p", 0, "port of client")
 	ja := flag.String("ja", "", "ip of existing node")
 	jp := flag.Int("jp", 0, "port of existing node")
-	ts := flag.Int("ts", 500, "time in ms between stabilize")
-	tff := flag.Int("tff", 500, "time in ms between fix fingers")
-	tcp := flag.Int("tcp", 500, "time in ms between check predecessor")
+	//ts := flag.Int("ts", 500, "time in ms between stabilize")
+	//tff := flag.Int("tff", 500, "time in ms between fix fingers")
+	//tcp := flag.Int("tcp", 500, "time in ms between check predecessor")
 	r := flag.Int("r", 1, "number of successors")
 	i := flag.String("i", "", "id of client (optional)")
+
+	testSuccessor := flag.String("testSuccessor", "", "set successor address manually")
+	testPre := flag.String("testPre", "", "set predecessor address manually")
 
 	flag.Parse()
 
@@ -96,14 +100,24 @@ func main() {
 		join(&n, ja, jp)
 	}
 
+	// Manually set successor and id from terminal
+	if *testSuccessor != "" {
+		n.Successor[0].Addr = NodeAddress(*testSuccessor)
+		n.Successor[0].Id = hashAddress(n.Successor[0].Addr)
+	}
+	if *testPre != "" {
+		n.Predecessor.Addr = NodeAddress(*testPre)
+		n.Predecessor.Id = hashAddress(n.Predecessor.Addr)
+	}
+
 	// Start listening to incoming connections from other nodes
 	go listen(&n, *p)
 	fmt.Println("Chord server started on adress: ", n.Addr, " with id: ", n.Id)
 
 	// Start a go routine for each of the steps to make the network consistent
-	go stabilize(&n, ts)
-	go fixFingers(&n, tff)
-	go checkPredecessor(&n, tcp)
+	//go stabilize(&n, ts)
+	//go fixFingers(&n, tff)
+	//go checkPredecessor(&n, tcp)
 
 	// Handle command line commands
 	commandLine(&n)
@@ -114,12 +128,17 @@ func main() {
 // create a new Chord ring
 func create(n *ThisNode) {
 	n.Successor[0] = n.Node
+	n.FingerTable[0] = n.Node
 }
 
 // join a Chord ring containing node n' (ja, jp)
 func join(n *ThisNode, ja *string, jp *int) {
 	n.Successor[0].Addr = NodeAddress(*ja + ":" + fmt.Sprint(*jp))
-	findSuccessor(n, n.Id)
+	n.FingerTable[0].Addr = NodeAddress(*ja + ":" + fmt.Sprint(*jp))
+
+	succ := findSuccessor(n, n.Id)
+	n.Successor[0] = succ
+	n.FingerTable[0] = succ
 }
 
 func findSuccessor(n *ThisNode, searchId Key) Node {
@@ -150,16 +169,17 @@ func findSuccessorIteration(n *ThisNode, searchId Key) (Node, bool) {
 	//succAddr := n.Successor[0].Addr
 
 	// If r is between c and s, or if successor wraps around
-	if succ != "" &&
-		((searchId > curr && searchId <= succ) ||
-			(succ <= curr && (curr < searchId || searchId < succ))) {
+	if succ != "" && isCircleBetweenIncludingEnd(searchId, curr, succ) {
 		// The return- is between current- and successor- address' -> found successor
 		return n.Successor[0], false
 
+	} else if succ == "" {
+		// If successor id is empty we have to send request to the address of
+		// successor as the closestPrecNode will not work unless id is defined
+		return n.Successor[0], true
 	} else {
 		// Iteratively send findSuccessor to next node to continue searching
 		closestPrecNode := closestPrecedingNode(n, searchId)
-
 		return closestPrecNode, true
 	}
 }
@@ -168,8 +188,8 @@ func findSuccessorIteration(n *ThisNode, searchId Key) (Node, bool) {
 func closestPrecedingNode(n *ThisNode, id Key) Node {
 	for i := 255; i >= 0; i-- {
 		finger := n.FingerTable[i]
-
-		if n.Id < finger.Id && finger.Id > id {
+		//fmt.Println(i, finger.Id, id)
+		if isCircleBetween(finger.Id, n.Id, id) {
 			return finger
 		}
 	}
@@ -181,43 +201,30 @@ func closestPrecedingNode(n *ThisNode, id Key) Node {
 
 // called periodically. verifies n’s immediate
 // successor, and tells the successor about n.
-/*
-x = successor.predecessor;
-if (x ∈ (n,successor))
-successor = x;
-successor.notify(n);
-*/
 func stabilize(n *ThisNode, tc *int) {
 	// wait tc milliseconds
 
-}
+	x, err := getPredecessor(n.Successor[0].Addr)
+	if err != nil {
+		fmt.Println(err)
+	}
 
-// n' thinks it might be our predecessor.
-/*
-if (predecessor is nil or n' ∈ (predecessor, n))
-predecessor = n';
-*/
-func notify(n *ThisNode, nPrime Node) {
-	/*
-		if n.Predecessor.Addr == "" || n.Predecessor.Id == "" || n.Predecessor.Id < nPrime.Id {
-
-		}
-	*/
-	if n.Predecessor.Addr == "" || n.Predecessor.Id == "" || (n.Predecessor.Id < nPrime.Id && nPrime.Id < n.Id) {
-		n.Predecessor = nPrime
-
+	// x in (n, successor) or this node is its own successor
+	if isCircleBetween(x.Id, n.Id, n.Successor[0].Id) ||
+		(x.Id != "" && n.Id == n.Successor[0].Id) {
+		n.Successor[0] = x
+		notify(n, n.Successor[0])
 	}
 
 }
 
+// Send request to our successor to tell that we might be its predecessor
+func notify(n *ThisNode, succ Node) {
+	sendMessage(succ.Addr, HandleNotify, string(n.Addr)+"/"+string(n.Id))
+}
+
 // called periodically. refreshes finger table entries.
 // next stores the index of the next finger to fix.
-/*
-next = next + 1 ;
-if (next > m)
-next = 1 ;
-finger[next] = find successor(n + 2^(next−1) );
-*/
 func fixFingers(n *ThisNode, tff *int) {
 	//for i := 0; i < 256; i++ {
 
@@ -233,13 +240,19 @@ func checkPredecessor(n *ThisNode, tcp *int) {
 	// TODO: wait tcp milliseconds
 	// TODO: what to do when predecessor has failed???
 
+	if n.Predecessor.Addr == "" {
+		return
+	}
+
 	msg, err := sendMessage(n.Predecessor.Addr, HandlePing, "")
 	if err != nil {
-		fmt.Println("Predecessor has failed", err)
+		fmt.Println("Predecessor maybe failed", err)
 	}
 
 	if string(msg) != "200 OK" {
 		fmt.Println("Predecessor has failed", msg)
+	} else {
+		fmt.Println("Predecessor alive")
 	}
 }
 
@@ -259,4 +272,21 @@ func hashString(str string) string {
 	h.Write([]byte(str))
 	sha1_hash := hex.EncodeToString(h.Sum(nil))
 	return sha1_hash
+}
+
+// is n in (pre, succ)
+func isCircleBetween(n Key, pre Key, succ Key) bool {
+	return (
+	// If between consecutive numbers
+	(pre < n && n < succ) ||
+		// Connecting end of circle with beginning
+		(succ < pre &&
+			// Between largest id and 0 or Between 0 and smallest id
+			(pre < n || n < succ)))
+}
+
+// is n in (pre, succ]
+func isCircleBetweenIncludingEnd(n Key, pre Key, succ Key) bool {
+	return (pre < n && n <= succ) ||
+		(succ <= pre && (pre < n || n < succ))
 }
