@@ -1,3 +1,3 @@
 #!/bin/sh
 cd ..
-go run . -a localhost -p 1130 -ja localhost -jp 1135
+go run . -a localhost -p 1136 -ja localhost -jp 1135

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 )
 
@@ -41,9 +42,34 @@ func commandLine(n *ThisNode) {
 			printState(n)
 		case "lookup", "l":
 			lookup(n)
+
+		//manually invoke timed functions
+		case "stabilize":
+			i := 0
+			stabilize(n, &i)
+		case "notify":
+			notify(n, n.Successor[0])
+		case "checkpredecessor":
+			i := 0
+			checkPredecessor(n, &i)
+		case "fixfingers":
+			fixFingers(n)
+		case "ping":
+			reader := bufio.NewReader(os.Stdin)
+			fmt.Print("Enter node to ping: ")
+
+			address, _ := reader.ReadString('\n')
+			res, err := sendMessage(NodeAddress(address[:len(address)-1]), HandlePing, "")
+			if err != nil {
+				fmt.Println(err)
+			}
+
+			fmt.Println(string(res))
+
 		case "storefile", "file", "f":
 			storeFile(n)
 		case "printstate", "p":
+			clear()
 			printState(n)
 		case "exit", "x":
 			os.Exit(0)
@@ -72,6 +98,7 @@ func lookup(n *ThisNode) {
 	id := Key(hashString(path))
 	succ := findSuccessor(n, id)
 
+	fmt.Println("Key of resource is:", id)
 	fmt.Println("Address of resource is:", succ)
 }
 
@@ -92,22 +119,34 @@ func storeFile(n *ThisNode) {
 }
 
 func printState(n *ThisNode) {
-	fmt.Println(n.Predecessor.Addr, "-> (", n.Addr, ") ->", n.Successor[0].Addr)
+	fmt.Printf("Pred\t%s\t%s\n", n.Predecessor.Addr, n.Predecessor.Id)
+	fmt.Printf("This\t%s\t%s\n", n.Addr, n.Id)
 
-	p := n.Predecessor.Id
-	a := n.Id
-	s := n.Successor[0].Id
-
-	if len(p) > 30 {
-		p = p[:len(p)-30] + "... "
-	}
-	if len(a) > 30 {
-		a = a[:len(a)-30] + "... "
-	}
-	if len(s) > 30 {
-		s = s[:len(s)-30] + "... "
+	fmt.Println("Successor list:")
+	for i, succ := range n.Successor {
+		fmt.Printf("%3d\t%s\t%s\n", i, succ.Addr, succ.Id)
 	}
 
-	// Print first part of hashvalues to see if they are in order
-	fmt.Println(p + " -> ( " + a + " ) -> " + s)
+	fmt.Println("Finger table:")
+	for i, succ := range n.FingerTable {
+		// Don't print if empty
+		if succ.Addr == "" {
+			continue
+		}
+		fmt.Printf("2^%3d\t%s\t%s\n", i, succ.Addr, succ.Id)
+	}
+
+	fmt.Println("Finger table2:")
+	for _, i := range n.FingerTable2 {
+		// Don't print if empty
+		fmt.Println(BigIntToHexStr(i))
+		fmt.Println(BigIntToStr(i) + "\n")
+	}
+}
+
+func clear() {
+	cmd := exec.Command("clear") //Linux example, its tested
+	cmd.Stdout = os.Stdout
+	cmd.Run()
+
 }

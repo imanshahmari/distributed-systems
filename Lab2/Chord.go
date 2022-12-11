@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"math/big"
 )
 
 /*
@@ -15,33 +16,42 @@ Done:
 	- Implement closestPreceedingNode and update findSuccessor
 	- Change how the networking works to be call then response, ie. where it returns a value or a forwarding address (might be better for security later)
 	- Convert all underscore_names to camelCasing
+	- Implement stabilize (add networking method getPredecessor)
+	- Implement notify (add networking method handleNotify)
+	- Implement checkPredecessor  (add networking method handlePing (ie responds back with OK message if alive))
 
 
 TODOs:
-   - Implement stabilize (add networking method getPredecessor)
-   - Implement notify (add networking method handleNotify)
-   - Implement fixFingers (does findSuccessor need changes??)
-   - Implement checkPredecessor  (add networking method handlePing (ie responds back with OK message if alive))
-   - Pass in all flags to Chord via docker (can you do all in one env variable)
-   - Update readme
+	- Add the stabilizing go routines back with an endless loop with time tc tff and tcp, handle eventual errors from not having a complete ring better than now.
+	- Successor is not saved to finger table when we join, therefore findSuccessor or lookup does not work
+	- Implement fixFingers
+	- Fix docker to create multiple servers with different ips
+	- Update readme
+	- Change http post to sftp
+	- Make secure with https
+	- Encrypt files before sending
 
    *Remember that if we need our node object n in these functions, it has to be passed in as a pointer otherwise we copy the values and it will not be changed for the rest of the functions (&n creates a pointer reference (from main()), *n uses the pointer as a value, and (n *Node) is the type to use in the function definitions)
 */
+
+type PhysicalAdress *big.Int
 
 type Key string
 
 type NodeAddress string
 
 type Node struct {
-	Id   Key
-	Addr NodeAddress
+	Id        Key
+	Addr      NodeAddress
+	Identifer PhysicalAdress
 }
 
 type ThisNode struct {
 	Node
-	FingerTable []Node
-	Predecessor Node
-	Successor   []Node
+	FingerTable  []Node
+	FingerTable2 []PhysicalAdress
+	Predecessor  Node
+	Successor    []Node
 
 	Bucket map[Key]string
 }
@@ -58,6 +68,9 @@ func main() {
 	//tcp := flag.Int("tcp", 500, "time in ms between check predecessor")
 	r := flag.Int("r", 1, "number of successors")
 	i := flag.String("i", "", "id of client (optional)")
+
+	testSuccessor := flag.String("testSuccessor", "", "set successor address manually")
+	testPre := flag.String("testPre", "", "set predecessor address manually")
 
 	flag.Parse()
 
@@ -81,6 +94,7 @@ func main() {
 	n.Bucket = make(map[Key]string)
 	n.Successor = make([]Node, *r)
 	n.FingerTable = make([]Node, 256)
+	n.FingerTable2 = make([]PhysicalAdress, 8)
 
 	if *i == "" {
 		// If the id is not defined by comand line argument, generate it from hashing ip and port
@@ -93,8 +107,17 @@ func main() {
 	if *ja == "" {
 		create(&n)
 	} else {
-		fmt.Println("Joining")
 		join(&n, ja, jp)
+	}
+
+	// Manually set successor and id from terminal
+	if *testSuccessor != "" {
+		n.Successor[0].Addr = NodeAddress(*testSuccessor)
+		n.Successor[0].Id = hashAddress(n.Successor[0].Addr)
+	}
+	if *testPre != "" {
+		n.Predecessor.Addr = NodeAddress(*testPre)
+		n.Predecessor.Id = hashAddress(n.Predecessor.Addr)
 	}
 
 	// Start listening to incoming connections from other nodes
@@ -102,11 +125,9 @@ func main() {
 	fmt.Println("Chord server started on adress: ", n.Addr, " with id: ", n.Id)
 
 	// Start a go routine for each of the steps to make the network consistent
-	/*
-		go stabilize(&n, ts)
-		go fixFingers(&n, tff)
-		go checkPredecessor(&n, tcp)
-	*/
+	//go stabilize(&n, ts)
+	go fixFingers(&n)
+	//go checkPredecessor(&n, tcp)
 
 	// Handle command line commands
 	commandLine(&n)
@@ -116,19 +137,18 @@ func main() {
 
 // create a new Chord ring
 func create(n *ThisNode) {
-	fmt.Println("CREATED NODE")
 	n.Successor[0] = n.Node
+	n.FingerTable[0] = n.Node
 }
 
 // join a Chord ring containing node n' (ja, jp)
 func join(n *ThisNode, ja *string, jp *int) {
-	fmt.Println("TRYING TO JOIN 1")
-	// n.Predessor = nil same as doing nothing
 	n.Successor[0].Addr = NodeAddress(*ja + ":" + fmt.Sprint(*jp))
-	fmt.Println("THIS NODE ADRESS: " + n.Addr)
-	fmt.Println("FIND SUCCESSOR: " + n.Id)
+	n.FingerTable[0].Addr = NodeAddress(*ja + ":" + fmt.Sprint(*jp))
 
-	findSuccessor(n, n.Id)
+	succ := findSuccessor(n, n.Id)
+	n.Successor[0] = succ
+	n.FingerTable[0] = succ
 }
 
 func findSuccessor(n *ThisNode, searchId Key) Node {
@@ -137,13 +157,8 @@ func findSuccessor(n *ThisNode, searchId Key) Node {
 
 	// If relay then repeat while we still get relay adresses to the next node
 	for isRelayAddress {
-		fmt.Println("IS RELAY ACTIVE")
-		fmt.Println(isRelayAddress)
 		c, err := getFindSuccessor(succ.Addr, string(searchId))
-
-		// Unexpected end of json input
 		if err != nil {
-			fmt.Println(err)
 			fmt.Println(err)
 		}
 
@@ -161,27 +176,21 @@ func findSuccessor(n *ThisNode, searchId Key) Node {
 func findSuccessorIteration(n *ThisNode, searchId Key) (Node, bool) {
 	curr := n.Id
 	succ := n.Successor[0].Id
-	fmt.Println("SECOND NODE SUCCESSOR IS: " + succ)
 	//succAddr := n.Successor[0].Addr
 
 	// If r is between c and s, or if successor wraps around
-	if succ != "" &&
-		((searchId > curr && searchId <= succ) ||
-			(succ <= curr && (curr < searchId || searchId < succ))) {
+	if succ != "" && isCircleBetweenIncludingEnd(searchId, curr, succ) {
 		// The return- is between current- and successor- address' -> found successor
-		fmt.Println("VI KOMMER ALDRIG HIT")
 		return n.Successor[0], false
 
+	} else if succ == "" {
+		// If successor id is empty we have to send request to the address of
+		// successor as the closestPrecNode will not work unless id is defined
+		return n.Successor[0], true
 	} else {
 		// Iteratively send findSuccessor to next node to continue searching
-		fmt.Println("VI KOMMER HIT")
-		// Finger tables not implemented yet
-		/*
-			closestPrecNode := closestPrecedingNode(n, searchId)
-
-			return closestPrecNode, true
-		*/
-		return n.Successor[0], true
+		closestPrecNode := closestPrecedingNode(n, searchId)
+		return closestPrecNode, true
 	}
 }
 
@@ -189,8 +198,8 @@ func findSuccessorIteration(n *ThisNode, searchId Key) (Node, bool) {
 func closestPrecedingNode(n *ThisNode, id Key) Node {
 	for i := 255; i >= 0; i-- {
 		finger := n.FingerTable[i]
-
-		if n.Id < finger.Id && finger.Id > id {
+		//fmt.Println(i, finger.Id, id)
+		if isCircleBetween(finger.Id, n.Id, id) {
 			return finger
 		}
 	}
@@ -202,50 +211,40 @@ func closestPrecedingNode(n *ThisNode, id Key) Node {
 
 // called periodically. verifies n’s immediate
 // successor, and tells the successor about n.
-/*
-x = successor.predecessor;
-if (x ∈ (n,successor))
-successor = x;
-successor.notify(n);
-*/
 func stabilize(n *ThisNode, tc *int) {
 	// wait tc milliseconds
 
-}
+	x, err := getPredecessor(n.Successor[0].Addr)
+	if err != nil {
+		fmt.Println(err)
+	}
 
-// n' thinks it might be our predecessor.
-/*
-if (predecessor is nil or n' ∈ (predecessor, n))
-predecessor = n';
-*/
-func notify(n *ThisNode, nPrime Node) {
-	/*
-		if n.Predecessor.Addr == "" || n.Predecessor.Id == "" || n.Predecessor.Id < nPrime.Id {
-
-		}
-	*/
-	if n.Predecessor.Addr == "" || n.Predecessor.Id == "" || (n.Predecessor.Id < nPrime.Id && nPrime.Id < n.Id) {
-		n.Predecessor = nPrime
-
+	// x in (n, successor) or this node is its own successor
+	if isCircleBetween(x.Id, n.Id, n.Successor[0].Id) ||
+		(x.Id != "" && n.Id == n.Successor[0].Id) {
+		n.Successor[0] = x
+		notify(n, n.Successor[0])
 	}
 
 }
 
+// Send request to our successor to tell that we might be its predecessor
+func notify(n *ThisNode, succ Node) {
+	sendMessage(succ.Addr, HandleNotify, string(n.Addr)+"/"+string(n.Id))
+}
+
 // called periodically. refreshes finger table entries.
 // next stores the index of the next finger to fix.
-/*
-next = next + 1 ;
-if (next > m)
-next = 1 ;
-finger[next] = find successor(n + 2^(next−1) );
-*/
-func fixFingers(n *ThisNode, tff *int) {
-	//for i := 0; i < 256; i++ {
 
-	//	n.FingerTable[i] = findSuccessor(n, n.Id+2**(i), n.Addr)
-	//}
+func fixFingers(n *ThisNode) {
 
-	// wait tff milliseconds
+	for i := 0; i < 8; i++ {
+		//x := jump(n.Addr, i)
+		n.FingerTable2[i] = jump(n.Addr, i)
+		n.FingerTable[i] = findSuccessor(n, Key(BigIntToHexStr(jump(n.Addr, i))))
+		//BigIntToHexStr(x)
+		//fmt.Println("N:ID is FOLLOWING:" + n.Id)
+	}
 
 }
 
@@ -254,13 +253,19 @@ func checkPredecessor(n *ThisNode, tcp *int) {
 	// TODO: wait tcp milliseconds
 	// TODO: what to do when predecessor has failed???
 
+	if n.Predecessor.Addr == "" {
+		return
+	}
+
 	msg, err := sendMessage(n.Predecessor.Addr, HandlePing, "")
 	if err != nil {
-		fmt.Println("Predecessor has failed", err)
+		fmt.Println("Predecessor maybe failed", err)
 	}
 
 	if string(msg) != "200 OK" {
 		fmt.Println("Predecessor has failed", msg)
+	} else {
+		fmt.Println("Predecessor alive")
 	}
 }
 
@@ -268,6 +273,21 @@ func checkPredecessor(n *ThisNode, tcp *int) {
 
 func hashAddress(a NodeAddress) Key {
 	return Key(hashString(string(a)))
+}
+
+func hashAdressToInt(a NodeAddress) PhysicalAdress {
+
+	x := hashToInt(string(a))
+	return PhysicalAdress(x)
+
+	//return PhysicalAdress(*hashToInt(a))
+
+}
+
+func hashToInt(elt string) *big.Int {
+	hasher := sha1.New()
+	hasher.Write([]byte(elt))
+	return new(big.Int).SetBytes(hasher.Sum(nil))
 }
 
 func hashString(str string) string {
@@ -278,6 +298,53 @@ func hashString(str string) string {
 
 	h := sha1.New()
 	h.Write([]byte(str))
+	/*
+		fmt.Println("HERE WE GO NUVARANDE HASHER")
+		fmt.Println(h)
+	*/
 	sha1_hash := hex.EncodeToString(h.Sum(nil))
+	/*
+		fmt.Println("HASH IN HEX: ")
+		fmt.Println(sha1_hash)
+	*/
 	return sha1_hash
+}
+
+// is n in (pre, succ)
+func isCircleBetween(n Key, pre Key, succ Key) bool {
+	return (
+	// If between consecutive numbers
+	(pre < n && n < succ) ||
+		// Connecting end of circle with beginning
+		(succ < pre &&
+			// Between largest id and 0 or Between 0 and smallest id
+			(pre < n || n < succ)))
+}
+
+// is n in (pre, succ]
+func isCircleBetweenIncludingEnd(n Key, pre Key, succ Key) bool {
+	return (pre < n && n <= succ) ||
+		(succ <= pre && (pre < n || n < succ))
+}
+
+func jump(address NodeAddress, fingerentry int) *big.Int {
+	const keySize = sha1.Size * 8 // this is 160 for some reason
+
+	var two = big.NewInt(2)
+	var hashMod = new(big.Int).Exp(big.NewInt(2), big.NewInt(keySize), nil)
+
+	n := hashAdressToInt(address)
+	fingerentryminus1 := big.NewInt(int64(fingerentry) - 1)
+	jump := new(big.Int).Exp(two, fingerentryminus1, nil)
+	sum := new(big.Int).Add(n, jump)
+
+	return PhysicalAdress(new(big.Int).Mod(sum, hashMod))
+}
+
+func BigIntToHexStr(bigInt *big.Int) string {
+	return fmt.Sprintf("%x", bigInt)
+}
+
+func BigIntToStr(bigInt *big.Int) string {
+	return fmt.Sprintf("%v", bigInt)
 }

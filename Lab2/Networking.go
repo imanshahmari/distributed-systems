@@ -18,10 +18,11 @@ type HandleFunction string
 
 // Enum to only allow accepted functions in code
 const (
-	HandleFindSucc HandleFunction = "findsuccessor"
-	HandlePing     HandleFunction = "ping"
-	HandleFile     HandleFunction = "file"
-	HandleNotify   HandleFunction = "notify"
+	HandleFindSucc    HandleFunction = "findsuccessor"
+	HandlePing        HandleFunction = "ping"
+	HandleFile        HandleFunction = "file"
+	HandleNotify      HandleFunction = "notify"
+	HandlePredecessor HandleFunction = "predecessor"
 )
 
 // Response type
@@ -80,23 +81,25 @@ func handle(n *ThisNode, conn net.Conn, wg *sync.WaitGroup) {
 	}
 
 	p := strings.Split(req.URL.Path, "/")
+	fmt.Println(p)
 
-	fmt.Println("HELLO THERE" + p[1])
-
-	// Convert first argument to
-	switch HandleFunction(p[0]) {
+	// Convert first argument to function
+	switch HandleFunction(p[1]) {
 	case HandleFindSucc:
-		handleFindSuccessor(n, Key(p[1]), req, conn)
+		handleFindSuccessor(n, Key(p[2]), req, conn)
 
 	case HandleNotify:
-		handleNotify(n, NodeAddress(p[1]), Key(p[2]), req, conn)
+		handleNotify(n, NodeAddress(p[2]), Key(p[3]), req, conn)
+
+	case HandlePredecessor:
+		handlePredecessor(n, req, conn)
 
 	case HandlePing:
 		sendResponse(200, nil, req, conn)
 
 	case HandleFile:
 		// Put together path again without first element "file"
-		filePath := strings.Join(p[1:], "/")
+		filePath := strings.Join(p[2:], "/")
 		switch req.Method {
 		case "GET":
 			handleGetFile(filePath, req, conn)
@@ -125,14 +128,43 @@ func handleFindSuccessor(n *ThisNode, id Key, req *http.Request, conn net.Conn) 
 	if err != nil {
 		fmt.Println(err)
 	}
-	fmt.Println("HEEEEEEEEEEJ")
-	fmt.Println(string(body))
+
 	sendResponse(200, body, req, conn)
 }
 
+// n' thinks it might be our predecessor.
+/*
+if (predecessor is nil or n' ∈ (predecessor, n))
+predecessor = n';
+*/
 func handleNotify(n *ThisNode, address NodeAddress, id Key, req *http.Request, conn net.Conn) {
-	// TODO: implement
-	sendResponse(500, nil, req, conn)
+	nPrime := Node{
+		Addr: address,
+		Id:   id,
+	}
+
+	// If predecessor is nil or n' is in range of (predecessor, n)
+	if n.Predecessor.Addr == "" || n.Predecessor.Id == "" ||
+		isCircleBetween(nPrime.Id, n.Predecessor.Id, n.Id) {
+		n.Predecessor = nPrime
+	}
+
+	sendResponse(200, nil, req, conn)
+}
+
+func handlePredecessor(n *ThisNode, req *http.Request, conn net.Conn) {
+	// return this nodes predecessor
+	msg := Communication{
+		Node:        n.Predecessor,
+		IsRelayAddr: false,
+	}
+
+	body, err := json.Marshal(msg)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	sendResponse(200, body, req, conn)
 }
 
 func handleGetFile(filePath string, req *http.Request, conn net.Conn) {
@@ -223,16 +255,10 @@ func sendResponse(statusCode int, body []byte, req *http.Request, conn net.Conn)
 
 func sendMessage(address NodeAddress, function HandleFunction, msg string) ([]byte, error) {
 
-	fmt.Println("INSIDE SEND MESSAGE adress IS: " + address)
-	fmt.Println("INSIDE SEND MESSAGE function IS: " + function)
-	fmt.Println("INSIDE SEND MESSAGE msg IS: " + msg)
-
-	url := string(address) + "/" + string(function) + "/" + msg
+	url := "http://" + string(address) + "/" + string(function) + "/" + msg
 	fmt.Println("$> Sent: ", url)
 
 	res, err := http.Get(url)
-
-	fmt.Println("INSIDE SEND MESSAGE err IS: ", err)
 	if err != nil {
 		return nil, err
 	}
@@ -249,19 +275,42 @@ func sendMessage(address NodeAddress, function HandleFunction, msg string) ([]by
 
 // Parse the respons from findSuccessor
 func getFindSuccessor(address NodeAddress, msg string) (Communication, error) {
-	fmt.Println("Node adress IS: " + address)
-	fmt.Println("msg IS: " + msg)
-
 	body, err := sendMessage(address, HandleFindSucc, msg)
-
-	var data Communication
-	err = json.Unmarshal(body, &data)
 	if err != nil {
 		return Communication{}, err
 	}
 
+	var data Communication
+	err = json.Unmarshal(body, &data)
+	if err != nil {
+		println(string(body))
+		return Communication{}, err
+	}
+
+	fmt.Println(data)
+
 	// Successfully got response
 	return data, nil
+}
+
+func getPredecessor(address NodeAddress) (Node, error) {
+	body, err := sendMessage(address, HandlePredecessor, "")
+	if err != nil {
+		return Node{}, err
+	}
+
+	var data Communication
+	err = json.Unmarshal(body, &data)
+	if err != nil {
+		println(string(body))
+		return Node{}, err
+	}
+
+	fmt.Println(data)
+
+	// Successfully got response
+	return data.Node, nil
+
 }
 
 func postFile(address NodeAddress, filePath string, data []byte) error {
