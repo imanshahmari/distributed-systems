@@ -93,8 +93,8 @@ func main() {
 	n.Addr = NodeAddress(*a + ":" + fmt.Sprint(*p))
 	n.Bucket = make(map[Key]string)
 	n.Successor = make([]Node, *r)
-	n.FingerTable = make([]Node, 256)
-	n.FingerTable2 = make([]PhysicalAdress, 8)
+	n.FingerTable = make([]Node, 160)
+	n.FingerTable2 = make([]PhysicalAdress, 160)
 
 	if *i == "" {
 		// If the id is not defined by comand line argument, generate it from hashing ip and port
@@ -187,6 +187,7 @@ func findSuccessorIteration(n *ThisNode, searchId Key) (Node, bool) {
 		// If successor id is empty we have to send request to the address of
 		// successor as the closestPrecNode will not work unless id is defined
 		return n.Successor[0], true
+
 	} else {
 		// Iteratively send findSuccessor to next node to continue searching
 		closestPrecNode := closestPrecedingNode(n, searchId)
@@ -196,10 +197,11 @@ func findSuccessorIteration(n *ThisNode, searchId Key) (Node, bool) {
 
 // search the local table for the highest predecessor of id
 func closestPrecedingNode(n *ThisNode, id Key) Node {
-	for i := 255; i >= 0; i-- {
+	for i := 159; i >= 0; i-- {
 		finger := n.FingerTable[i]
 		//fmt.Println(i, finger.Id, id)
 		if isCircleBetween(finger.Id, n.Id, id) {
+			fmt.Println("did it!")
 			return finger
 		}
 	}
@@ -238,10 +240,17 @@ func notify(n *ThisNode, succ Node) {
 
 func fixFingers(n *ThisNode) {
 
-	for i := 0; i < 8; i++ {
+	for i := 0; i < 160; i++ {
 		//x := jump(n.Addr, i)
+		fingerTableEntry := Key(BigIntToHexStr(jump(n.Addr, i)))
 		n.FingerTable2[i] = jump(n.Addr, i)
-		n.FingerTable[i] = findSuccessor(n, Key(BigIntToHexStr(jump(n.Addr, i))))
+		//n.FingerTable[i] = findSuccessor(n, fingerTableEntry)
+		if fingerTableEntry <= n.Successor[0].Id {
+			n.FingerTable[i] = n.Successor[0]
+		} else {
+
+		}
+		//fmt.Println(Key(BigIntToHexStr(jump(n.Addr, i))))
 		//BigIntToHexStr(x)
 		//fmt.Println("N:ID is FOLLOWING:" + n.Id)
 	}

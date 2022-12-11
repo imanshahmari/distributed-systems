@@ -23,12 +23,14 @@ const (
 	HandleFile        HandleFunction = "file"
 	HandleNotify      HandleFunction = "notify"
 	HandlePredecessor HandleFunction = "predecessor"
+	HandleFixFinger   HandleFunction = "fix"
 )
 
 // Response type
 type Communication struct {
 	Node        Node `json:"nodedata"`
 	IsRelayAddr bool `json:"isrelayaddr"`
+	SearchAdd   Key  `json:"searchadd"`
 }
 
 var (
@@ -109,6 +111,8 @@ func handle(n *ThisNode, conn net.Conn, wg *sync.WaitGroup) {
 			sendResponse(501, nil, req, conn)
 		}
 
+	case HandleFixFinger:
+		handlefixFinger(n, Key(p[2]), req, conn)
 	default:
 		// Other functions not allowed
 		sendResponse(400, nil, req, conn)
@@ -150,6 +154,25 @@ func handleNotify(n *ThisNode, address NodeAddress, id Key, req *http.Request, c
 	}
 
 	sendResponse(200, nil, req, conn)
+}
+
+func handlefixFinger(n *ThisNode, id Key, req *http.Request, conn net.Conn) {
+	/*
+		succ, isRelayAddr := findSuccessorIteration(n, id)
+
+		msg := Communication{
+			Node:        succ,
+			IsRelayAddr: isRelayAddr,
+		}
+
+		body, err := json.Marshal(msg)
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		sendResponse(200, body, req, conn)
+	*/
+	fmt.Println("I GOT HERE")
 }
 
 func handlePredecessor(n *ThisNode, req *http.Request, conn net.Conn) {
@@ -275,7 +298,29 @@ func sendMessage(address NodeAddress, function HandleFunction, msg string) ([]by
 
 // Parse the respons from findSuccessor
 func getFindSuccessor(address NodeAddress, msg string) (Communication, error) {
+	fmt.Println("STRING IS:" + msg)
 	body, err := sendMessage(address, HandleFindSucc, msg)
+	if err != nil {
+		return Communication{}, err
+	}
+
+	var data Communication
+	err = json.Unmarshal(body, &data)
+	if err != nil {
+		println(string(body))
+		return Communication{}, err
+	}
+	fmt.Println("THE DATA IS")
+	fmt.Println(data)
+
+	// Successfully got response
+	return data, nil
+}
+
+/*
+func getFixFinger(address NodeAddress, msg string) (Communication, error) {
+	fmt.Println("STRING IS:" + msg)
+	body, err := sendMessage(address, HandleFixFinger, msg)
 	if err != nil {
 		return Communication{}, err
 	}
@@ -292,6 +337,7 @@ func getFindSuccessor(address NodeAddress, msg string) (Communication, error) {
 	// Successfully got response
 	return data, nil
 }
+*/
 
 func getPredecessor(address NodeAddress) (Node, error) {
 	body, err := sendMessage(address, HandlePredecessor, "")
