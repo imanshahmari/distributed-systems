@@ -20,18 +20,18 @@ Done:
 	- Implement stabilize (add networking method getPredecessor)
 	- Implement notify (add networking method handleNotify)
 	- Implement checkPredecessor  (add networking method handlePing (ie responds back with OK message if alive))
+	- Implement fixFingers
+	- Add the stabilizing go routines back with an endless loop with time tc tff and tcp, handle eventual errors from not having a complete ring better than now.
+	- Successor is not saved to finger table when we join, therefore findSuccessor or lookup does not work
 
 
 TODOs:
-	- Add the stabilizing go routines back with an endless loop with time tc tff and tcp, handle eventual errors from not having a complete ring better than now.
-	- Successor is not saved to finger table when we join, therefore findSuccessor or lookup does not work
-	- Implement fixFingers
-	- Fix docker to create multiple servers with different ips
-	- Update readme
 	- Change http post to sftp
 	- Make secure with https
 	- Replication of files
 	- Encrypt files before sending
+	- Update readme
+	- Fix docker to create multiple servers with different ips
 
    *Remember that if we need our node object n in these functions, it has to be passed in as a pointer otherwise we copy the values and it will not be changed for the rest of the functions (&n creates a pointer reference (from main()), *n uses the pointer as a value, and (n *Node) is the type to use in the function definitions)
 */
@@ -69,8 +69,7 @@ func main() {
 	ts := flag.Int("ts", 5000, "time in ms between stabilize")
 	tff := flag.Int("tff", 5000, "time in ms between fix fingers")
 	tcp := flag.Int("tcp", 5000, "time in ms between check predecessor")
-	_, _, _ = ts, tff, tcp // fix var not used error
-	r := flag.Int("r", 1, "number of successors")
+	r := flag.Int("r", 4, "number of successors")
 	i := flag.String("i", "", "id of client (optional)")
 
 	testSuccessor := flag.String("testSuccessor", "", "set successor address manually")
@@ -152,6 +151,8 @@ func join(n *ThisNode, ja *string, jp *int) {
 	if logFunctionCalls {
 		fmt.Println(time.Now().Format("15:04:05:0001"), "Joining network at ", *ja+":"+fmt.Sprint(*jp))
 	}
+
+	// Set default adress to the adress supplied by the flags (will be replaced)
 	n.Successor[0].Addr = NodeAddress(*ja + ":" + fmt.Sprint(*jp))
 	n.FingerTable[0].Addr = NodeAddress(*ja + ":" + fmt.Sprint(*jp))
 

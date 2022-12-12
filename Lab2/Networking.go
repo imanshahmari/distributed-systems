@@ -9,7 +9,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 )
@@ -175,6 +174,7 @@ func handleStoreFile(n *ThisNode, filename string, id Key, req *http.Request, co
 	sendResponse(200, nil, req, conn)
 }
 
+/*
 func handleGetFile(filePath string, req *http.Request, conn net.Conn) {
 
 	checkFiletype(filePath, req, conn)
@@ -221,6 +221,7 @@ func checkFiletype(filePath string, req *http.Request, conn net.Conn) error {
 	}
 	return fmt.Errorf("filetype not allowed")
 }
+*/
 
 func sendResponse(statusCode int, body []byte, req *http.Request, conn net.Conn) {
 	status := ""
