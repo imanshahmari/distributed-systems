@@ -216,12 +216,41 @@ func findSuccessorIteration(n *ThisNode, searchId Key) (Node, bool) {
 
 // search the local table for the highest predecessor of id
 func closestPrecedingNode(n *ThisNode, id Key) (Node, bool) {
+
+	// init this to n.node to allow isCircleBetween to work for successor list
+	returnFinger := n.Node
+
+	// Check the fingertable
 	for i := (len(n.FingerTable) - 1); i >= 0; i-- {
 		finger := n.FingerTable[i]
 		//fmt.Println(i, finger.Id, id)
 		if isCircleBetween(finger.Id, n.Id, id) {
-			return finger, true
+			// Check if the node is alive otherwise continue looking
+			_, err := sendMessage(finger.Addr, HandlePing, "")
+			if err != nil {
+				//fmt.Println(err)
+				continue
+			}
+			returnFinger = finger
+			break
 		}
+	}
+
+	// Check if there is a better node than the found finger
+	for _, successorNode := range n.Successor {
+		if isCircleBetween(successorNode.Id, returnFinger.Id, id) {
+			_, err := sendMessage(successorNode.Addr, HandlePing, "")
+			if err != nil {
+				//fmt.Println(err)
+				continue
+			}
+			return successorNode, true
+		}
+	}
+
+	// return the finger if it was found
+	if returnFinger.Addr != n.Addr {
+		return returnFinger, true
 	}
 
 	return n.Node, false
@@ -252,6 +281,7 @@ func stabilize(n *ThisNode, tc *int) {
 			n.Successor[0] = x
 			notify(n, n.Successor[0])
 		}
+
 	}
 }
 
@@ -270,6 +300,17 @@ func fixFingers(n *ThisNode, tff *int) {
 		time.Sleep(time.Duration(*tff) * time.Millisecond)
 		if logFunctionCalls {
 			fmt.Println(time.Now().Format("15:04:05:0001"), "Fixing fingers")
+		}
+
+		//Fixing the successor list
+		for i := 0; i < len(n.Successor); i++ {
+			if i == 0 {
+				succ2 := findSuccessor(n, jump2(n.Id, 1))
+				n.Successor[i] = succ2
+			} else {
+				succ2 := findSuccessor(n, jump2(n.Successor[i-1].Id, 1))
+				n.Successor[i] = succ2
+			}
 		}
 
 		for i := 0; i < len(n.FingerTable); i++ {
@@ -296,6 +337,27 @@ func jump(id Key, fingerentry int) Key {
 	sum := new(big.Int).Add(&n, jump)
 
 	return Key(BigIntToHexStr(new(big.Int).Mod(sum, hashMod)))
+}
+
+func jump2(id Key, fingerentry int) Key {
+
+	var n big.Int
+	n.SetString(string(id), 16)
+	/*
+		fmt.Println("BEFORE")
+		fmt.Println(BigIntToStr(&n))
+		fmt.Println(BigIntToHexStr(&n))
+	*/
+
+	finger := big.NewInt(int64(fingerentry))
+	sum := new(big.Int).Add(&n, finger)
+	/*
+		fmt.Println("AFTER")
+		fmt.Println(BigIntToStr(sum))
+		fmt.Println(BigIntToHexStr(sum))
+	*/
+
+	return Key(BigIntToHexStr(sum))
 }
 
 // called periodically. checks whether predecessor has failed
