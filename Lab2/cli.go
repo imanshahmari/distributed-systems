@@ -135,13 +135,14 @@ func printState(n *ThisNode) {
 		}
 		fmt.Printf("2^%3d\t%s\t%s\n", i, succ.Addr, succ.Id)
 	}
-
-	fmt.Println("Finger table2:")
-	for _, i := range n.FingerTable2 {
-		// Don't print if empty
-		fmt.Println(BigIntToHexStr(i))
-		fmt.Println(BigIntToStr(i) + "\n")
-	}
+	/*
+		fmt.Println("Finger table2:")
+		for _, i := range n.FingerTable2 {
+			// Don't print if empty
+			fmt.Println(BigIntToHexStr(i))
+			fmt.Println(BigIntToStr(i) + "\n")
+		}
+	*/
 }
 
 func clear() {
