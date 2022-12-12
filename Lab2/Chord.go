@@ -283,7 +283,6 @@ func jump(id Key, fingerentry int) Key {
 
 // called periodically. checks whether predecessor has failed
 func checkPredecessor(n *ThisNode, tcp *int) {
-	// TODO: what to do when predecessor has failed???
 	for {
 		if logFunctionCalls {
 			fmt.Println(time.Now().Format("15:04:05:0001"), "Checking predecessor")
@@ -294,16 +293,10 @@ func checkPredecessor(n *ThisNode, tcp *int) {
 			continue
 		}
 
-		_, err := sendMessage(n.Predecessor.Addr, HandlePing, "")
-		if err != nil {
+		msg, err := sendMessage(n.Predecessor.Addr, HandlePing, "")
+		if err != nil || string(msg) != "200 OK" {
 			fmt.Println("Predecessor has failed", err)
 		}
-
-		/*if string(msg) != "200 OK" {
-			fmt.Println("Predecessor has failed", msg)
-		} else {
-			fmt.Println("Predecessor alive")
-		}*/
 	}
 }
 
