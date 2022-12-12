@@ -51,7 +51,8 @@ func commandLine(n *ThisNode) {
 			fallthrough
 		case "printbucket":
 			for file, key := range n.Bucket {
-				fmt.Println(key, file)
+				hash := hashString(file)
+				fmt.Println(hash[:5], file, "\t", key[:5])
 			}
 		case "findsuccessor":
 			reader := bufio.NewReader(os.Stdin)

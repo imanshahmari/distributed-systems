@@ -83,9 +83,9 @@ func main() {
 
 	if *i == "" {
 		// If the id is not defined by comand line argument, generate it from hashing ip and port
-		n.Id = hashAddress(n.Addr)
+		n.Id = Key(fmt.Sprintf("%040s", hashAddress(n.Addr)))
 	} else {
-		n.Id = Key(*i)
+		n.Id = Key(fmt.Sprintf("%040s", *i))
 	}
 
 	// Create a new Chord ring if there is no --ja defined otherwise join
