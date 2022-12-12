@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 )
 
@@ -39,18 +40,40 @@ func commandLine(n *ThisNode) {
 			n.Predecessor.Id = hashAddress(n.Predecessor.Addr)
 
 			printState(n)
-		case "lookup", "l":
-			lookup(n)
+		case "setbucket":
+			reader := bufio.NewReader(os.Stdin)
+			fmt.Print("Enter filename of bucket: ")
+			filename, _ := reader.ReadString('\n')
+			fmt.Print("Enter storing id of bucket: ")
+			storingId, _ := reader.ReadString('\n')
+
+			n.Bucket[filename[:len(filename)-1]] = Key(storingId[:len(storingId)-1])
+			fallthrough
+		case "printbucket":
+			for file, key := range n.Bucket {
+				fmt.Println(key, file)
+			}
+
+		case "hash":
+			reader := bufio.NewReader(os.Stdin)
+			fmt.Print("Text to hash: ")
+
+			txt, _ := reader.ReadString('\n')
+			hashed := hashString(txt[:len(txt)-1])
+			fmt.Println(hashed)
 
 		//manually invoke timed functions
 		case "stabilize":
-			i := 0
+			i := 1000000000
 			stabilize(n, &i)
+		case "checkpredecessor":
+			i := 1000000000
+			checkPredecessor(n, &i)
+		case "fixfingers":
+			i := 1000000000
+			fixFingers(n, &i)
 		case "notify":
 			notify(n, n.Successor[0])
-		case "checkpredecessor":
-			i := 0
-			checkPredecessor(n, &i)
 		case "ping":
 			reader := bufio.NewReader(os.Stdin)
 			fmt.Print("Enter node to ping: ")
@@ -60,14 +83,17 @@ func commandLine(n *ThisNode) {
 			if err != nil {
 				fmt.Println(err)
 			}
-
 			fmt.Println(string(res))
 
+		// Mandatory functions
+		case "lookup", "l":
+			lookup(n)
 		case "storefile", "file", "f":
 			storeFile(n)
 		case "printstate", "p":
 			printState(n)
 		case "exit", "x":
+			clear()
 			os.Exit(0)
 		case "help", "h", "man":
 			fallthrough
@@ -90,12 +116,23 @@ func lookup(n *ThisNode) {
 	fmt.Print("Enter name of file: ")
 
 	path, _ := reader.ReadString('\n')
+	path = path[:len(path)-1]
 
-	id := Key(hashString(path))
-	succ := findSuccessor(n, id)
+	fileHash := Key(hashString(path))
+	succ := findSuccessor(n, fileHash)
 
-	fmt.Println("Key of resource is:", id)
-	fmt.Println("Address of resource is:", succ)
+	body, err := sendMessage(succ.Addr, HandleLookup, path)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	storingNode := findSuccessor(n, Key(body))
+
+	fmt.Println("Key of resource is:", fileHash)
+	fmt.Println("succ:", succ.Id)
+	fmt.Println("body: ", string(body))
+	fmt.Println("storingNode: ", storingNode)
+	//fmt.Println("Address of resource is: ", succ)
 }
 
 func storeFile(n *ThisNode) {
@@ -103,15 +140,15 @@ func storeFile(n *ThisNode) {
 	fmt.Print("Enter name of file: ")
 
 	path, _ := reader.ReadString('\n')
-	data, err := os.ReadFile(path)
+	path = path[:len(path)-1]
+
+	fileHash := Key(hashString(path))
+	succ := findSuccessor(n, fileHash)
+
+	_, err := sendMessage(succ.Addr, HandleStoreFile, path+"/"+string(n.Id))
 	if err != nil {
 		fmt.Println(err)
 	}
-
-	id := Key(hashString(path))
-	succ := findSuccessor(n, id)
-
-	postFile(succ.Addr, path, data)
 }
 
 func printState(n *ThisNode) {
@@ -124,11 +161,28 @@ func printState(n *ThisNode) {
 	}
 
 	fmt.Println("Finger table:")
+	fmt.Println("2^    _0    _1    _2    _3    _4    _5    _6    _7    _8    _9")
 	for i, succ := range n.FingerTable {
 		// Don't print if empty
 		if succ.Addr == "" {
 			continue
 		}
-		fmt.Printf("2^%3d\t%s\t%s\n", i, succ.Addr, succ.Id)
+		if i%10 == 0 {
+			fmt.Printf("%2d_ ", i/10)
+		}
+
+		fmt.Print(succ.Id[:5] + " ")
+		//fmt.Printf("2^%3d\t%s\t%s", i, succ.Addr, succ.Id)
+
+		if i%10 == 9 {
+			fmt.Printf("\n")
+		}
 	}
+}
+
+func clear() {
+	cmd := exec.Command("clear") //Linux example, its tested
+	cmd.Stdout = os.Stdout
+	cmd.Run()
+
 }

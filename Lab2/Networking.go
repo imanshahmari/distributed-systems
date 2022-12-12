@@ -20,9 +20,10 @@ type HandleFunction string
 const (
 	HandleFindSucc    HandleFunction = "findsuccessor"
 	HandlePing        HandleFunction = "ping"
-	HandleFile        HandleFunction = "file"
+	HandleStoreFile   HandleFunction = "storefile"
 	HandleNotify      HandleFunction = "notify"
 	HandlePredecessor HandleFunction = "predecessor"
+	HandleLookup      HandleFunction = "lookup"
 )
 
 // Response type
@@ -32,7 +33,8 @@ type Communication struct {
 }
 
 var (
-	openThreads = 0
+	openThreads    = 0
+	logSendRecieve = false
 )
 
 /***** Server *****/
@@ -40,7 +42,7 @@ var (
 func listen(n *ThisNode, port int) {
 	wg := new(sync.WaitGroup)
 
-	fmt.Println("Server started on port", port)
+	//fmt.Println("Server started on port", port)
 
 	// Initialize a tcp listner with the port specified
 	listner, err := net.Listen("tcp", ":"+fmt.Sprint(port))
@@ -81,7 +83,9 @@ func handle(n *ThisNode, conn net.Conn, wg *sync.WaitGroup) {
 	}
 
 	p := strings.Split(req.URL.Path, "/")
-	fmt.Println(p)
+	if logSendRecieve {
+		fmt.Println("Recieved: ", p)
+	}
 
 	// Convert first argument to function
 	switch HandleFunction(p[1]) {
@@ -97,17 +101,11 @@ func handle(n *ThisNode, conn net.Conn, wg *sync.WaitGroup) {
 	case HandlePing:
 		sendResponse(200, nil, req, conn)
 
-	case HandleFile:
-		// Put together path again without first element "file"
-		filePath := strings.Join(p[2:], "/")
-		switch req.Method {
-		case "GET":
-			handleGetFile(filePath, req, conn)
-		case "POST":
-			handlePostFile(filePath, req, conn)
-		default:
-			sendResponse(501, nil, req, conn)
-		}
+	case HandleStoreFile:
+		handleStoreFile(n, p[2], Key(p[3]), req, conn)
+
+	case HandleLookup:
+		handleLookup(n, p[2], req, conn)
 
 	default:
 		// Other functions not allowed
@@ -130,6 +128,11 @@ func handleFindSuccessor(n *ThisNode, id Key, req *http.Request, conn net.Conn) 
 	}
 
 	sendResponse(200, body, req, conn)
+}
+
+func handleLookup(n *ThisNode, filename string, req *http.Request, conn net.Conn) {
+	storingNode := n.Bucket[filename]
+	sendResponse(200, []byte(storingNode), req, conn)
 }
 
 // n' thinks it might be our predecessor.
@@ -165,6 +168,11 @@ func handlePredecessor(n *ThisNode, req *http.Request, conn net.Conn) {
 	}
 
 	sendResponse(200, body, req, conn)
+}
+
+func handleStoreFile(n *ThisNode, filename string, id Key, req *http.Request, conn net.Conn) {
+	n.Bucket[filename] = id
+	sendResponse(200, nil, req, conn)
 }
 
 func handleGetFile(filePath string, req *http.Request, conn net.Conn) {
@@ -256,7 +264,9 @@ func sendResponse(statusCode int, body []byte, req *http.Request, conn net.Conn)
 func sendMessage(address NodeAddress, function HandleFunction, msg string) ([]byte, error) {
 
 	url := "http://" + string(address) + "/" + string(function) + "/" + msg
-	fmt.Println("$> Sent: ", url)
+	if logSendRecieve {
+		fmt.Println("Sent: ", strings.Split(url, "/"))
+	}
 
 	res, err := http.Get(url)
 	if err != nil {
@@ -287,7 +297,7 @@ func getFindSuccessor(address NodeAddress, msg string) (Communication, error) {
 		return Communication{}, err
 	}
 
-	fmt.Println(data)
+	//fmt.Println(data)
 
 	// Successfully got response
 	return data, nil
@@ -306,24 +316,9 @@ func getPredecessor(address NodeAddress) (Node, error) {
 		return Node{}, err
 	}
 
-	fmt.Println(data)
+	//fmt.Println(data)
 
 	// Successfully got response
 	return data.Node, nil
 
-}
-
-func postFile(address NodeAddress, filePath string, data []byte) error {
-	url := string(address) + "/" + string(HandleFile) + "/" + filePath
-	fmt.Println("$> Posted: ", url)
-
-	contentType := http.DetectContentType(data)
-	body := bytes.NewReader(data)
-
-	_, err := http.Post(url, contentType, body)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }

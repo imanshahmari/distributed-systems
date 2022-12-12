@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"math/big"
+	"time"
 )
 
 /*
@@ -28,6 +30,7 @@ TODOs:
 	- Update readme
 	- Change http post to sftp
 	- Make secure with https
+	- Replication of files
 	- Encrypt files before sending
 
    *Remember that if we need our node object n in these functions, it has to be passed in as a pointer otherwise we copy the values and it will not be changed for the rest of the functions (&n creates a pointer reference (from main()), *n uses the pointer as a value, and (n *Node) is the type to use in the function definitions)
@@ -48,8 +51,13 @@ type ThisNode struct {
 	Predecessor Node
 	Successor   []Node
 
-	Bucket map[Key]string
+	Bucket map[string]Key
 }
+
+var (
+	logFunctionCalls  = false
+	logFunctionCalls2 = false
+)
 
 func main() {
 
@@ -58,9 +66,10 @@ func main() {
 	p := flag.Int("p", 0, "port of client")
 	ja := flag.String("ja", "", "ip of existing node")
 	jp := flag.Int("jp", 0, "port of existing node")
-	//ts := flag.Int("ts", 500, "time in ms between stabilize")
-	//tff := flag.Int("tff", 500, "time in ms between fix fingers")
-	//tcp := flag.Int("tcp", 500, "time in ms between check predecessor")
+	ts := flag.Int("ts", 5000, "time in ms between stabilize")
+	tff := flag.Int("tff", 5000, "time in ms between fix fingers")
+	tcp := flag.Int("tcp", 5000, "time in ms between check predecessor")
+	_, _, _ = ts, tff, tcp // fix var not used error
 	r := flag.Int("r", 1, "number of successors")
 	i := flag.String("i", "", "id of client (optional)")
 
@@ -86,9 +95,9 @@ func main() {
 
 	n := ThisNode{}
 	n.Addr = NodeAddress(*a + ":" + fmt.Sprint(*p))
-	n.Bucket = make(map[Key]string)
+	n.Bucket = make(map[string]Key)
 	n.Successor = make([]Node, *r)
-	n.FingerTable = make([]Node, 256)
+	n.FingerTable = make([]Node, 160)
 
 	if *i == "" {
 		// If the id is not defined by comand line argument, generate it from hashing ip and port
@@ -119,9 +128,9 @@ func main() {
 	fmt.Println("Chord server started on adress: ", n.Addr, " with id: ", n.Id)
 
 	// Start a go routine for each of the steps to make the network consistent
-	//go stabilize(&n, ts)
-	//go fixFingers(&n, tff)
-	//go checkPredecessor(&n, tcp)
+	go stabilize(&n, ts)
+	go fixFingers(&n, tff)
+	go checkPredecessor(&n, tcp)
 
 	// Handle command line commands
 	commandLine(&n)
@@ -131,21 +140,38 @@ func main() {
 
 // create a new Chord ring
 func create(n *ThisNode) {
+	if logFunctionCalls {
+		fmt.Println(time.Now().Format("15:04:05:0001"), "Creating network")
+	}
 	n.Successor[0] = n.Node
-	n.FingerTable[0] = n.Node
+	fillFingerTable(n, n.Node)
 }
 
 // join a Chord ring containing node n' (ja, jp)
 func join(n *ThisNode, ja *string, jp *int) {
+	if logFunctionCalls {
+		fmt.Println(time.Now().Format("15:04:05:0001"), "Joining network at ", *ja+":"+fmt.Sprint(*jp))
+	}
 	n.Successor[0].Addr = NodeAddress(*ja + ":" + fmt.Sprint(*jp))
 	n.FingerTable[0].Addr = NodeAddress(*ja + ":" + fmt.Sprint(*jp))
 
 	succ := findSuccessor(n, n.Id)
 	n.Successor[0] = succ
-	n.FingerTable[0] = succ
+	fillFingerTable(n, succ)
+
+	notify(n, succ)
+}
+
+func fillFingerTable(n *ThisNode, entry Node) {
+	for i := 0; i < len(n.FingerTable); i++ {
+		n.FingerTable[i] = entry
+	}
 }
 
 func findSuccessor(n *ThisNode, searchId Key) Node {
+	if logFunctionCalls2 {
+		fmt.Println(time.Now().Format("15:04:05:0001"), "Find successor ", searchId)
+	}
 	// Try to find in this node
 	succ, isRelayAddress := findSuccessorIteration(n, searchId)
 
@@ -183,22 +209,21 @@ func findSuccessorIteration(n *ThisNode, searchId Key) (Node, bool) {
 		return n.Successor[0], true
 	} else {
 		// Iteratively send findSuccessor to next node to continue searching
-		closestPrecNode := closestPrecedingNode(n, searchId)
-		return closestPrecNode, true
+		return closestPrecedingNode(n, searchId)
 	}
 }
 
 // search the local table for the highest predecessor of id
-func closestPrecedingNode(n *ThisNode, id Key) Node {
-	for i := 255; i >= 0; i-- {
+func closestPrecedingNode(n *ThisNode, id Key) (Node, bool) {
+	for i := (len(n.FingerTable) - 1); i >= 0; i-- {
 		finger := n.FingerTable[i]
 		//fmt.Println(i, finger.Id, id)
 		if isCircleBetween(finger.Id, n.Id, id) {
-			return finger
+			return finger, true
 		}
 	}
-	// Will probably crash if it comes here, but will not come here (???) as this case is the first part of the if-statement in findSuccessor
-	return n.Node
+
+	return n.Node, false
 }
 
 /***** Fix ring *****/
@@ -206,57 +231,95 @@ func closestPrecedingNode(n *ThisNode, id Key) Node {
 // called periodically. verifies n’s immediate
 // successor, and tells the successor about n.
 func stabilize(n *ThisNode, tc *int) {
-	// wait tc milliseconds
+	for {
+		time.Sleep(time.Duration(*tc) * time.Millisecond)
+		if logFunctionCalls {
+			fmt.Println(time.Now().Format("15:04:05:0001"), "Stabilizing")
+		}
 
-	x, err := getPredecessor(n.Successor[0].Addr)
-	if err != nil {
-		fmt.Println(err)
+		x, err := getPredecessor(n.Successor[0].Addr)
+		if err != nil {
+			fmt.Println(err)
+		}
+		if x.Addr == "" {
+			continue
+		}
+
+		// x in (n, successor) or this node is its own successor
+		if isCircleBetween(x.Id, n.Id, n.Successor[0].Id) ||
+			(x.Id != "" && n.Id == n.Successor[0].Id) {
+			n.Successor[0] = x
+			notify(n, n.Successor[0])
+		}
 	}
-
-	// x in (n, successor) or this node is its own successor
-	if isCircleBetween(x.Id, n.Id, n.Successor[0].Id) ||
-		(x.Id != "" && n.Id == n.Successor[0].Id) {
-		n.Successor[0] = x
-		notify(n, n.Successor[0])
-	}
-
 }
 
 // Send request to our successor to tell that we might be its predecessor
 func notify(n *ThisNode, succ Node) {
+	if logFunctionCalls {
+		fmt.Println(time.Now().Format("15:04:05:0001"), "Notifying")
+	}
 	sendMessage(succ.Addr, HandleNotify, string(n.Addr)+"/"+string(n.Id))
 }
 
 // called periodically. refreshes finger table entries.
 // next stores the index of the next finger to fix.
 func fixFingers(n *ThisNode, tff *int) {
-	//for i := 0; i < 256; i++ {
+	for {
+		time.Sleep(time.Duration(*tff) * time.Millisecond)
+		if logFunctionCalls {
+			fmt.Println(time.Now().Format("15:04:05:0001"), "Fixing fingers")
+		}
 
-	//	n.FingerTable[i] = findSuccessor(n, n.Id+2**(i), n.Addr)
-	//}
+		for i := 0; i < len(n.FingerTable); i++ {
+			//x := jump(n.Addr, i)
+			fingerTableEntry := jump(n.Id, i)
 
-	// wait tff milliseconds
+			n.FingerTable[i] = findSuccessor(n, fingerTableEntry)
+		}
+	}
+}
 
+// n.id + 2^i where i is the index of fingertable
+func jump(id Key, fingerentry int) Key {
+	const keySize = sha1.Size * 8 // this is 160 for some reason
+
+	var two = big.NewInt(2)
+	var hashMod = new(big.Int).Exp(big.NewInt(2), big.NewInt(keySize), nil)
+
+	var n big.Int
+	n.SetString(string(id), 16)
+
+	fingerentryminus1 := big.NewInt(int64(fingerentry) - 1)
+	jump := new(big.Int).Exp(two, fingerentryminus1, nil)
+	sum := new(big.Int).Add(&n, jump)
+
+	return Key(BigIntToHexStr(new(big.Int).Mod(sum, hashMod)))
 }
 
 // called periodically. checks whether predecessor has failed
 func checkPredecessor(n *ThisNode, tcp *int) {
-	// TODO: wait tcp milliseconds
 	// TODO: what to do when predecessor has failed???
+	for {
+		if logFunctionCalls {
+			fmt.Println(time.Now().Format("15:04:05:0001"), "Checking predecessor")
+		}
 
-	if n.Predecessor.Addr == "" {
-		return
-	}
+		time.Sleep(time.Duration(*tcp) * time.Millisecond)
+		if n.Predecessor.Addr == "" {
+			continue
+		}
 
-	msg, err := sendMessage(n.Predecessor.Addr, HandlePing, "")
-	if err != nil {
-		fmt.Println("Predecessor maybe failed", err)
-	}
+		msg, err := sendMessage(n.Predecessor.Addr, HandlePing, "")
+		if err != nil {
+			fmt.Println("Predecessor maybe failed", err)
+		}
 
-	if string(msg) != "200 OK" {
-		fmt.Println("Predecessor has failed", msg)
-	} else {
-		fmt.Println("Predecessor alive")
+		if string(msg) != "200 OK" {
+			fmt.Println("Predecessor has failed", msg)
+		} /*else {
+			fmt.Println("Predecessor alive")
+		}*/
 	}
 }
 
@@ -293,4 +356,12 @@ func isCircleBetween(n Key, pre Key, succ Key) bool {
 func isCircleBetweenIncludingEnd(n Key, pre Key, succ Key) bool {
 	return (pre < n && n <= succ) ||
 		(succ <= pre && (pre < n || n < succ))
+}
+
+func BigIntToHexStr(bigInt *big.Int) string {
+	return fmt.Sprintf("%x", bigInt)
+}
+
+func BigIntToStr(bigInt *big.Int) string {
+	return fmt.Sprintf("%v", bigInt)
 }
