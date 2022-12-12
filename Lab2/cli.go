@@ -53,6 +53,14 @@ func commandLine(n *ThisNode) {
 			for file, key := range n.Bucket {
 				fmt.Println(key, file)
 			}
+		case "findsuccessor":
+			reader := bufio.NewReader(os.Stdin)
+			fmt.Print("Enter id to find successor of: ")
+
+			address, _ := reader.ReadString('\n')
+			succ := findSuccessor(n, Key(address[:len(address)-1]))
+
+			fmt.Println(succ.Id)
 
 		case "hash":
 			reader := bufio.NewReader(os.Stdin)
@@ -81,7 +89,7 @@ func commandLine(n *ThisNode) {
 			address, _ := reader.ReadString('\n')
 			res, err := sendMessage(NodeAddress(address[:len(address)-1]), HandlePing, "")
 			if err != nil {
-				fmt.Println(err)
+				fmt.Println("error ping", err)
 			}
 			fmt.Println(string(res))
 
@@ -123,7 +131,7 @@ func lookup(n *ThisNode) {
 
 	body, err := sendMessage(succ.Addr, HandleLookup, path)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("error lookup", err)
 	}
 
 	storingNode := findSuccessor(n, Key(body))
@@ -147,7 +155,7 @@ func storeFile(n *ThisNode) {
 
 	_, err := sendMessage(succ.Addr, HandleStoreFile, path+"/"+string(n.Id))
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("error storefile", err)
 	}
 }
 
@@ -161,22 +169,25 @@ func printState(n *ThisNode) {
 	}
 
 	fmt.Println("Finger table:")
-	fmt.Println("2^    _0    _1    _2    _3    _4    _5    _6    _7    _8    _9")
+	fmt.Println("2^     _0    _1    _2    _3    _4    _5    _6    _7    _8    _9")
 	for i, succ := range n.FingerTable {
 		// Don't print if empty
 		if succ.Addr == "" {
 			continue
 		}
-		if i%10 == 0 {
-			fmt.Printf("%2d_ ", i/10)
-		}
+		//if i%10 == 0 {
+		//	fmt.Printf("%2d_ ", i/10)
+		//}
+		//if len(succ.Id) > 5 {
+		//	fmt.Print(succ.Id[:5] + " ")
+		//} else {
+		//	fmt.Printf("%5s ", succ.Id)
+		//}
+		//if i%10 == 9 {
+		//	fmt.Printf("\n")
+		//}
 
-		fmt.Print(succ.Id[:5] + " ")
-		//fmt.Printf("2^%3d\t%s\t%s", i, succ.Addr, succ.Id)
-
-		if i%10 == 9 {
-			fmt.Printf("\n")
-		}
+		fmt.Printf("2^%3d\t%s\t%s\n", i, succ.Addr, succ.Id)
 	}
 }
 

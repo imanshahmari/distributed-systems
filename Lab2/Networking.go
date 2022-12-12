@@ -23,6 +23,7 @@ const (
 	HandleNotify      HandleFunction = "notify"
 	HandlePredecessor HandleFunction = "predecessor"
 	HandleLookup      HandleFunction = "lookup"
+	HandleReplicate   HandleFunction = "replicate"
 )
 
 // Response type
@@ -46,7 +47,7 @@ func listen(n *ThisNode, port int) {
 	// Initialize a tcp listner with the port specified
 	listner, err := net.Listen("tcp", ":"+fmt.Sprint(port))
 	if err != nil {
-		log.Fatalln(err)
+		log.Fatalln("error listen start", err)
 	}
 
 	// Closes the linstner at the end of runtime
@@ -56,7 +57,7 @@ func listen(n *ThisNode, port int) {
 	for {
 		conn, err := listner.Accept()
 		if err != nil {
-			log.Println(err)
+			log.Println("error listen accept", err)
 			// skip the handle function if error
 			continue
 		}
@@ -78,7 +79,8 @@ func handle(n *ThisNode, conn net.Conn, wg *sync.WaitGroup) {
 
 	req, err := http.ReadRequest(bufio.NewReader(conn))
 	if err != nil {
-		log.Println(err)
+		log.Println("error handle", err)
+		return
 	}
 
 	p := strings.Split(req.URL.Path, "/")
@@ -101,6 +103,11 @@ func handle(n *ThisNode, conn net.Conn, wg *sync.WaitGroup) {
 		sendResponse(200, nil, req, conn)
 
 	case HandleStoreFile:
+		// Replicate on successor then store
+		replicateSingleFile(n, p[2], Key(p[3]))
+		fallthrough
+	case HandleReplicate:
+		// When replicating we only store
 		handleStoreFile(n, p[2], Key(p[3]), req, conn)
 
 	case HandleLookup:
@@ -123,7 +130,7 @@ func handleFindSuccessor(n *ThisNode, id Key, req *http.Request, conn net.Conn) 
 
 	body, err := json.Marshal(msg)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("error handleFindSuccessor", err)
 	}
 
 	sendResponse(200, body, req, conn)
@@ -163,7 +170,7 @@ func handlePredecessor(n *ThisNode, req *http.Request, conn net.Conn) {
 
 	body, err := json.Marshal(msg)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("error handlePredecessor", err)
 	}
 
 	sendResponse(200, body, req, conn)
@@ -294,7 +301,7 @@ func getFindSuccessor(address NodeAddress, msg string) (Communication, error) {
 	var data Communication
 	err = json.Unmarshal(body, &data)
 	if err != nil {
-		println(string(body))
+		//println(string(body))
 		return Communication{}, err
 	}
 
@@ -313,7 +320,7 @@ func getPredecessor(address NodeAddress) (Node, error) {
 	var data Communication
 	err = json.Unmarshal(body, &data)
 	if err != nil {
-		println(string(body))
+		//println(string(body))
 		return Node{}, err
 	}
 

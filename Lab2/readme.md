@@ -6,6 +6,12 @@
 - Alexander Bodin
 
 
+## Run go
+
+``` go run Chord.go Networking.go cli.go -a localhost -p 1100 ```
+``` go run Chord.go Networking.go cli.go -a localhost -p 1110 -ja localhost -jp 1100 ```
+etc.
+
 
 ## Build and run server:
 ``` docker build --build-arg portNum=80 -t tda596-lab2 . ```

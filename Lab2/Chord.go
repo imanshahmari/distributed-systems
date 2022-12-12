@@ -10,21 +10,6 @@ import (
 )
 
 /*
-Done:
-	- The findSuccessor always uses the hashed address, change to use id defined in terminal flag. This means changeing how the networking is done and also the comparison in findSuccessor. Do we need to store the successor id in our Node??
-	- Change n.Successor to a list??
-	- Initialize n.Successors and n.FingerTable correctly
-	- Implement closestPreceedingNode and update findSuccessor
-	- Change how the networking works to be call then response, ie. where it returns a value or a forwarding address (might be better for security later)
-	- Convert all underscore_names to camelCasing
-	- Implement stabilize (add networking method getPredecessor)
-	- Implement notify (add networking method handleNotify)
-	- Implement checkPredecessor  (add networking method handlePing (ie responds back with OK message if alive))
-	- Implement fixFingers
-	- Add the stabilizing go routines back with an endless loop with time tc tff and tcp, handle eventual errors from not having a complete ring better than now.
-	- Successor is not saved to finger table when we join, therefore findSuccessor or lookup does not work
-
-
 TODOs:
 	- Change http post to sftp
 	- Make secure with https
@@ -32,8 +17,6 @@ TODOs:
 	- Encrypt files before sending
 	- Update readme
 	- Fix docker to create multiple servers with different ips
-
-   *Remember that if we need our node object n in these functions, it has to be passed in as a pointer otherwise we copy the values and it will not be changed for the rest of the functions (&n creates a pointer reference (from main()), *n uses the pointer as a value, and (n *Node) is the type to use in the function definitions)
 */
 
 type Key string
@@ -66,9 +49,9 @@ func main() {
 	p := flag.Int("p", 0, "port of client")
 	ja := flag.String("ja", "", "ip of existing node")
 	jp := flag.Int("jp", 0, "port of existing node")
-	ts := flag.Int("ts", 5000, "time in ms between stabilize")
-	tff := flag.Int("tff", 5000, "time in ms between fix fingers")
-	tcp := flag.Int("tcp", 5000, "time in ms between check predecessor")
+	ts := flag.Int("ts", 1000, "time in ms between stabilize")
+	tff := flag.Int("tff", 1000, "time in ms between fix fingers")
+	tcp := flag.Int("tcp", 1000, "time in ms between check predecessor")
 	r := flag.Int("r", 4, "number of successors")
 	i := flag.String("i", "", "id of client (optional)")
 
@@ -180,7 +163,7 @@ func findSuccessor(n *ThisNode, searchId Key) Node {
 	for isRelayAddress {
 		c, err := getFindSuccessor(succ.Addr, string(searchId))
 		if err != nil {
-			fmt.Println(err)
+			fmt.Println("error findSuccessor", err)
 		}
 
 		succ, isRelayAddress = c.Node, c.IsRelayAddr
@@ -240,7 +223,7 @@ func stabilize(n *ThisNode, tc *int) {
 
 		x, err := getPredecessor(n.Successor[0].Addr)
 		if err != nil {
-			fmt.Println(err)
+			fmt.Println("error stabilize", err)
 		}
 		if x.Addr == "" {
 			continue
@@ -311,16 +294,33 @@ func checkPredecessor(n *ThisNode, tcp *int) {
 			continue
 		}
 
-		msg, err := sendMessage(n.Predecessor.Addr, HandlePing, "")
+		_, err := sendMessage(n.Predecessor.Addr, HandlePing, "")
 		if err != nil {
-			fmt.Println("Predecessor maybe failed", err)
+			fmt.Println("Predecessor has failed", err)
 		}
 
-		if string(msg) != "200 OK" {
+		/*if string(msg) != "200 OK" {
 			fmt.Println("Predecessor has failed", msg)
-		} /*else {
+		} else {
 			fmt.Println("Predecessor alive")
 		}*/
+	}
+}
+
+func replicateSingleFile(n *ThisNode, filename string, storingNode Key) {
+	sendMessage(n.Successor[0].Addr, HandleReplicate, filename+"/"+string(storingNode))
+}
+
+func replicatePredecessorsFiles(n *ThisNode) {
+
+	pred := string(n.Predecessor.Id)
+
+	for filename, storingNode := range n.Bucket {
+		id := hashString(filename)
+		if id < pred {
+			replicateSingleFile(n, filename, storingNode)
+		}
+
 	}
 }
 
