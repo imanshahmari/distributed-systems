@@ -104,7 +104,7 @@ func handle(n *ThisNode, conn net.Conn, wg *sync.WaitGroup) {
 
 	case HandleStoreFile:
 		// Replicate on successor then store
-		replicateSingleFile(n, p[2], Key(p[3]))
+		replicateSingleBucketElem(n, p[2], Key(p[3]))
 		fallthrough
 	case HandleReplicate:
 		// When replicating we only store
