@@ -286,8 +286,9 @@ func fixFingers(n *ThisNode, tff *int) {
 			log.Println("Fixing fingers")
 		}
 
+		// TODO: This is sending too many requests which gives EOF error on reciever
+		// Could work if once we get a successor, fill all elements up to the value right above successor id, this way we dont find the same one many times, and can use this node as shortcut for remaining nodes (maybe??)
 		for i := 0; i < len(n.FingerTable); i++ {
-			//x := jump(n.Addr, i)
 			fingerTableEntry := jump(n.Id, i)
 
 			n.FingerTable[i] = findSuccessor(n, fingerTableEntry)
@@ -352,27 +353,6 @@ func jump(id Key, fingerentry int) Key {
 	sum := new(big.Int).Add(&n, jump)
 
 	return Key(BigIntToHexStr(new(big.Int).Mod(sum, hashMod)))
-}
-
-func jump2(id Key, fingerentry int) Key {
-
-	var n big.Int
-	n.SetString(string(id), 16)
-	/*
-		fmt.Println("BEFORE")
-		fmt.Println(BigIntToStr(&n))
-		fmt.Println(BigIntToHexStr(&n))
-	*/
-
-	finger := big.NewInt(int64(fingerentry))
-	sum := new(big.Int).Add(&n, finger)
-	/*
-		fmt.Println("AFTER")
-		fmt.Println(BigIntToStr(sum))
-		fmt.Println(BigIntToHexStr(sum))
-	*/
-
-	return Key(BigIntToHexStr(sum))
 }
 
 // called periodically. checks whether predecessor has failed

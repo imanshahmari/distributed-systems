@@ -67,17 +67,17 @@ func listen(n *ThisNode, port int) {
 		}
 
 		wg.Add(1)
-		go handle(n, conn, wg)
+		go handle(n, &conn, wg)
 	}
 }
 
-func handle(n *ThisNode, conn net.Conn, wg *sync.WaitGroup) {
+func handle(n *ThisNode, conn *net.Conn, wg *sync.WaitGroup) {
 	// Anonymous function to decrement openThreads at the end (defer must call function)
 	defer func() { openThreads -= 1 }()
-	defer conn.Close()
+	defer (*conn).Close()
 	defer wg.Done()
 
-	req, err := http.ReadRequest(bufio.NewReader(conn))
+	req, err := http.ReadRequest(bufio.NewReader(*conn))
 	if err != nil {
 		log.Println("error handle", err)
 		return
@@ -120,7 +120,7 @@ func handle(n *ThisNode, conn net.Conn, wg *sync.WaitGroup) {
 
 }
 
-func handleFindSuccessor(n *ThisNode, id Key, req *http.Request, conn net.Conn) {
+func handleFindSuccessor(n *ThisNode, id Key, req *http.Request, conn *net.Conn) {
 	succ, isRelayAddr := findSuccessorIteration(n, id)
 
 	msg := Communication{
@@ -136,7 +136,7 @@ func handleFindSuccessor(n *ThisNode, id Key, req *http.Request, conn net.Conn) 
 	sendResponse(200, body, req, conn)
 }
 
-func handleLookup(n *ThisNode, filename string, req *http.Request, conn net.Conn) {
+func handleLookup(n *ThisNode, filename string, req *http.Request, conn *net.Conn) {
 	storingNode := n.Bucket[filename]
 	sendResponse(200, []byte(storingNode), req, conn)
 }
@@ -146,7 +146,7 @@ func handleLookup(n *ThisNode, filename string, req *http.Request, conn net.Conn
 if (predecessor is nil or n' ∈ (predecessor, n))
 predecessor = n';
 */
-func handleNotify(n *ThisNode, address NodeAddress, id Key, req *http.Request, conn net.Conn) {
+func handleNotify(n *ThisNode, address NodeAddress, id Key, req *http.Request, conn *net.Conn) {
 	nPrime := Node{
 		Addr: address,
 		Id:   id,
@@ -161,7 +161,7 @@ func handleNotify(n *ThisNode, address NodeAddress, id Key, req *http.Request, c
 	sendResponse(200, nil, req, conn)
 }
 
-func handlePredecessor(n *ThisNode, req *http.Request, conn net.Conn) {
+func handlePredecessor(n *ThisNode, req *http.Request, conn *net.Conn) {
 	// return this nodes predecessor
 	msg := Communication{
 		Node:        n.Predecessor,
@@ -176,13 +176,13 @@ func handlePredecessor(n *ThisNode, req *http.Request, conn net.Conn) {
 	sendResponse(200, body, req, conn)
 }
 
-func handleStoreFile(n *ThisNode, filename string, id Key, req *http.Request, conn net.Conn) {
+func handleStoreFile(n *ThisNode, filename string, id Key, req *http.Request, conn *net.Conn) {
 	n.Bucket[filename] = id
 	sendResponse(200, nil, req, conn)
 }
 
 /*
-func handleGetFile(filePath string, req *http.Request, conn net.Conn) {
+func handleGetFile(filePath string, req *http.Request, conn *net.Conn) {
 
 	checkFiletype(filePath, req, conn)
 
@@ -194,7 +194,7 @@ func handleGetFile(filePath string, req *http.Request, conn net.Conn) {
 	sendResponse(200, data, req, conn)
 }
 
-func handlePostFile(filePath string, req *http.Request, conn net.Conn) {
+func handlePostFile(filePath string, req *http.Request, conn *net.Conn) {
 	err := checkFiletype(filePath, req, conn)
 	if err != nil {
 		sendResponse(400, nil, req, conn)
@@ -214,7 +214,7 @@ func handlePostFile(filePath string, req *http.Request, conn net.Conn) {
 	sendResponse(200, nil, req, conn)
 }
 
-func checkFiletype(filePath string, req *http.Request, conn net.Conn) error {
+func checkFiletype(filePath string, req *http.Request, conn *net.Conn) error {
 	_filePath := strings.Split(filePath, "/")
 	s := strings.Split(_filePath[len(_filePath)-1], ".")
 	extention := s[len(s)-1]
@@ -230,7 +230,7 @@ func checkFiletype(filePath string, req *http.Request, conn net.Conn) error {
 }
 */
 
-func sendResponse(statusCode int, body []byte, req *http.Request, conn net.Conn) {
+func sendResponse(statusCode int, body []byte, req *http.Request, conn *net.Conn) {
 	status := ""
 	switch statusCode {
 	case 200:
@@ -264,7 +264,7 @@ func sendResponse(statusCode int, body []byte, req *http.Request, conn net.Conn)
 
 	res.Header.Set("Content-Type", http.DetectContentType(body))
 
-	res.Write(conn)
+	res.Write(*conn)
 }
 
 /***** Client *****/

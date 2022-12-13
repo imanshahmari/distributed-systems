@@ -63,7 +63,7 @@ func commandLine(n *ThisNode) {
 		case "printbucket":
 			for file, key := range n.Bucket {
 				hash := hashString(file)
-				fmt.Println(hash[:5], file, "\t", key[:5])
+				fmt.Println(shortStr(hash), file, "\t", shortStr(string(key)))
 			}
 		case "findsuccessor":
 			if len(inputs) < 2 {
@@ -92,13 +92,13 @@ func commandLine(n *ThisNode) {
 		//manually invoke timed functions
 		case "stabilize":
 			i := 1000000000
-			stabilize(n, &i)
+			go stabilize(n, &i)
 		case "checkpredecessor":
 			i := 1000000000
-			checkPredecessor(n, &i)
+			go checkPredecessor(n, &i)
 		case "fixfingers":
 			i := 1000000000
-			fixFingers(n, &i)
+			go fixFingers(n, &i)
 
 		case "clear":
 			clear()
@@ -170,13 +170,11 @@ func storeFile(n *ThisNode, inputs *[]string) {
 
 func printState(n *ThisNode, printAll bool, printTable bool) {
 
-	var predId, thisId Key
-	if printAll {
-		predId = n.Predecessor.Id
-		thisId = n.Id
-	} else {
-		predId = n.Predecessor.Id[:5]
-		thisId = n.Id[:5]
+	predId := string(n.Predecessor.Id)
+	thisId := string(n.Id)
+	if !printAll {
+		predId = shortStr(predId)
+		thisId = shortStr(thisId)
 	}
 
 	fmt.Printf("Pred\t%s\t%s\n", n.Predecessor.Addr, predId)
@@ -186,7 +184,7 @@ func printState(n *ThisNode, printAll bool, printTable bool) {
 	for i, succ := range n.Successor {
 		// Only show first
 		if !printAll {
-			fmt.Printf("%3d\t%s\t%s\n", i, succ.Addr, succ.Id[:5])
+			fmt.Printf("%3d\t%s\t%s\n", i, succ.Addr, shortStr(string(succ.Id)))
 			break
 		}
 
@@ -208,11 +206,8 @@ func printState(n *ThisNode, printAll bool, printTable bool) {
 				if i%10 == 0 {
 					fmt.Printf("%2d_ ", i/10)
 				}
-				if len(succ.Id) > 5 {
-					fmt.Print(succ.Id[:5] + " ")
-				} else {
-					fmt.Printf("%5s ", succ.Id)
-				}
+				fmt.Printf("%5s ", shortStr(string(succ.Id)))
+
 				if i%10 == 9 {
 					fmt.Printf("\n")
 				}
@@ -236,4 +231,11 @@ func clear() {
 	cmd.Stdout = os.Stdout
 	cmd.Run()
 
+}
+
+func shortStr(s string) string {
+	if len(s) > 5 {
+		return s[:5]
+	}
+	return s
 }
