@@ -42,7 +42,7 @@ var (
 func listen(n *ThisNode, port int) {
 	wg := new(sync.WaitGroup)
 
-	//fmt.Println("Server started on port", port)
+	//log.Println("Server started on port", port)
 
 	// Initialize a tcp listner with the port specified
 	listner, err := net.Listen("tcp", ":"+fmt.Sprint(port))
@@ -85,7 +85,7 @@ func handle(n *ThisNode, conn net.Conn, wg *sync.WaitGroup) {
 
 	p := strings.Split(req.URL.Path, "/")
 	if logSendRecieve {
-		fmt.Println("Recieved: ", p)
+		log.Println("Recieved: ", p)
 	}
 
 	// Convert first argument to function
@@ -130,7 +130,7 @@ func handleFindSuccessor(n *ThisNode, id Key, req *http.Request, conn net.Conn) 
 
 	body, err := json.Marshal(msg)
 	if err != nil {
-		fmt.Println("error handleFindSuccessor", err)
+		log.Println("error handleFindSuccessor", err)
 	}
 
 	sendResponse(200, body, req, conn)
@@ -170,7 +170,7 @@ func handlePredecessor(n *ThisNode, req *http.Request, conn net.Conn) {
 
 	body, err := json.Marshal(msg)
 	if err != nil {
-		fmt.Println("error handlePredecessor", err)
+		log.Println("error handlePredecessor", err)
 	}
 
 	sendResponse(200, body, req, conn)
@@ -276,7 +276,7 @@ func sendMessage(address NodeAddress, function HandleFunction, msg string) ([]by
 
 	url := "http://" + string(address) + "/" + string(function) + "/" + msg
 	if logSendRecieve {
-		fmt.Println("Sent: ", strings.Split(url, "/"))
+		log.Println("Sent: ", strings.Split(url, "/"))
 	}
 
 	res, err := http.Get(url)

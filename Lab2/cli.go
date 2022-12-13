@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -84,7 +85,7 @@ func commandLine(n *ThisNode) {
 			}
 			res, err := sendMessage(NodeAddress(inputs[1]), HandlePing, "")
 			if err != nil {
-				fmt.Println("error ping", err)
+				log.Println("error ping", err)
 			}
 			fmt.Println(string(res))
 
@@ -142,7 +143,7 @@ func lookup(n *ThisNode, inputs *[]string) {
 
 	body, err := sendMessage(succ.Addr, HandleLookup, (*inputs)[1])
 	if err != nil {
-		fmt.Println("error lookup", err)
+		log.Println("error lookup", err)
 	}
 
 	storingNode := findSuccessor(n, Key(body))
@@ -163,22 +164,33 @@ func storeFile(n *ThisNode, inputs *[]string) {
 
 	_, err := sendMessage(succ.Addr, HandleStoreFile, (*inputs)[1]+"/"+string(n.Id))
 	if err != nil {
-		fmt.Println("error storefile", err)
+		log.Println("error storefile", err)
 	}
 }
 
 func printState(n *ThisNode, printAll bool, printTable bool) {
-	fmt.Printf("Pred\t%s\t%s\n", n.Predecessor.Addr, n.Predecessor.Id)
-	fmt.Printf("This\t%s\t%s\n", n.Addr, n.Id)
+
+	var predId, thisId Key
+	if printAll {
+		predId = n.Predecessor.Id
+		thisId = n.Id
+	} else {
+		predId = n.Predecessor.Id[:5]
+		thisId = n.Id[:5]
+	}
+
+	fmt.Printf("Pred\t%s\t%s\n", n.Predecessor.Addr, predId)
+	fmt.Printf("This\t%s\t%s\n", n.Addr, thisId)
 
 	fmt.Println("Successor list:")
 	for i, succ := range n.Successor {
-		fmt.Printf("%3d\t%s\t%s\n", i, succ.Addr, succ.Id)
-
 		// Only show first
 		if !printAll {
+			fmt.Printf("%3d\t%s\t%s\n", i, succ.Addr, succ.Id[:5])
 			break
 		}
+
+		fmt.Printf("%3d\t%s\t%s\n", i, succ.Addr, succ.Id)
 	}
 
 	if printAll {

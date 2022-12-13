@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"log"
 	"math/big"
 	"time"
 )
@@ -107,7 +108,7 @@ func main() {
 
 	// Start listening to incoming connections from other nodes
 	go listen(&n, *p)
-	fmt.Println("Chord server started on adress: ", n.Addr, " with id: ", n.Id)
+	log.Println("Chord server started on adress: ", n.Addr, " with id: ", n.Id)
 
 	// Start a go routine for each of the steps to make the network consistent
 	go stabilize(&n, ts)
@@ -123,7 +124,7 @@ func main() {
 // create a new Chord ring
 func create(n *ThisNode) {
 	if logFunctionCalls {
-		fmt.Println(time.Now().Format("15:04:05:0001"), "Creating network")
+		log.Println("Creating network")
 	}
 	addSuccessor(n, n.Node)
 	fillFingerTable(n, n.Node)
@@ -132,7 +133,7 @@ func create(n *ThisNode) {
 // join a Chord ring containing node n' (ja, jp)
 func join(n *ThisNode, ja *string, jp *int) {
 	if logFunctionCalls {
-		fmt.Println(time.Now().Format("15:04:05:0001"), "Joining network at ", *ja+":"+fmt.Sprint(*jp))
+		log.Println("Joining network at ", *ja+":"+fmt.Sprint(*jp))
 	}
 
 	// Set default adress to the adress supplied by the flags (will be replaced)
@@ -154,7 +155,7 @@ func fillFingerTable(n *ThisNode, entry Node) {
 
 func findSuccessor(n *ThisNode, searchId Key) Node {
 	if logFunctionCalls2 {
-		fmt.Println(time.Now().Format("15:04:05:0001"), "Find successor ", searchId)
+		log.Println("Find successor ", searchId)
 	}
 	// Try to find in this node
 	succ, isRelayAddress := findSuccessorIteration(n, searchId)
@@ -163,7 +164,7 @@ func findSuccessor(n *ThisNode, searchId Key) Node {
 	for isRelayAddress {
 		c, err := getFindSuccessor(succ.Addr, string(searchId))
 		if err != nil {
-			fmt.Println("error findSuccessor", err)
+			log.Println("error findSuccessor", err)
 		}
 
 		succ, isRelayAddress = c.Node, c.IsRelayAddr
@@ -211,7 +212,7 @@ func closestPrecedingNode(n *ThisNode, id Key) (Node, bool) {
 			// Check if the node is alive otherwise continue looking
 			_, err := sendMessage(finger.Addr, HandlePing, "")
 			if err != nil {
-				//fmt.Println(err)
+				//log.Println(err)
 				continue
 			}
 			returnFinger = finger
@@ -224,7 +225,7 @@ func closestPrecedingNode(n *ThisNode, id Key) (Node, bool) {
 		if isCircleBetween(successorNode.Id, returnFinger.Id, id) {
 			_, err := sendMessage(successorNode.Addr, HandlePing, "")
 			if err != nil {
-				//fmt.Println(err)
+				//log.Println(err)
 				continue
 			}
 			return successorNode, true
@@ -247,13 +248,13 @@ func stabilize(n *ThisNode, tc *int) {
 	for {
 		time.Sleep(time.Duration(*tc) * time.Millisecond)
 		if logFunctionCalls {
-			fmt.Println(time.Now().Format("15:04:05:0001"), "Stabilizing")
+			log.Println("Stabilizing")
 		}
 
 		succ := getSuccessor(n)
 		x, err := getPredecessor(succ.Addr)
 		if err != nil {
-			fmt.Println("error stabilize", err)
+			log.Println("error stabilize", err)
 		}
 		if x.Addr == "" {
 			continue
@@ -271,7 +272,7 @@ func stabilize(n *ThisNode, tc *int) {
 // Send request to our successor to tell that we might be its predecessor
 func notify(n *ThisNode, succ Node) {
 	if logFunctionCalls {
-		fmt.Println(time.Now().Format("15:04:05:0001"), "Notifying")
+		log.Println("Notifying")
 	}
 	sendMessage(succ.Addr, HandleNotify, string(n.Addr)+"/"+string(n.Id))
 }
@@ -282,7 +283,7 @@ func fixFingers(n *ThisNode, tff *int) {
 	for {
 		time.Sleep(time.Duration(*tff) * time.Millisecond)
 		if logFunctionCalls {
-			fmt.Println(time.Now().Format("15:04:05:0001"), "Fixing fingers")
+			log.Println("Fixing fingers")
 		}
 
 		for i := 0; i < len(n.FingerTable); i++ {
@@ -379,8 +380,7 @@ func checkPredecessor(n *ThisNode, tcp *int) {
 	for {
 		time.Sleep(time.Duration(*tcp) * time.Millisecond)
 		if logFunctionCalls {
-			fmt.Println(time.Now().Format("15:04:05:0001"),
-				"Checking predecessor")
+			log.Println("Checking predecessor")
 		}
 
 		if n.Predecessor.Addr == "" {
@@ -389,7 +389,7 @@ func checkPredecessor(n *ThisNode, tcp *int) {
 
 		msg, err := sendMessage(n.Predecessor.Addr, HandlePing, "")
 		if err != nil || string(msg) != "200 OK" {
-			fmt.Println("Predecessor has failed", err)
+			log.Println("Predecessor has failed", err)
 			// This node is now responsible for the elements
 			// replicate so that there exists two replicas of bucket elements
 			replicatePredecessorsBucketElems(n)
@@ -403,7 +403,7 @@ func checkPredecessor(n *ThisNode, tcp *int) {
 func replicateSingleBucketElem(n *ThisNode, filename string, storingNode Key) {
 	_, err := sendMessage(getSuccessor(n).Addr, HandleReplicate, filename+"/"+string(storingNode))
 	if err != nil {
-		fmt.Println("error replicate single", err)
+		log.Println("error replicate single", err)
 	}
 }
 
