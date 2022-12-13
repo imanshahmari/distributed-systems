@@ -300,18 +300,18 @@ func checkPredecessor(n *ThisNode, tcp *int) {
 	}
 }
 
-func replicateSingleFile(n *ThisNode, filename string, storingNode Key) {
+func replicateSingleBucketElem(n *ThisNode, filename string, storingNode Key) {
 	sendMessage(n.Successor[0].Addr, HandleReplicate, filename+"/"+string(storingNode))
 }
 
-func replicatePredecessorsFiles(n *ThisNode) {
+func replicatePredecessorsBucketElems(n *ThisNode) {
 
 	pred := string(n.Predecessor.Id)
 
 	for filename, storingNode := range n.Bucket {
 		id := hashString(filename)
 		if id < pred {
-			replicateSingleFile(n, filename, storingNode)
+			replicateSingleBucketElem(n, filename, storingNode)
 		}
 
 	}
