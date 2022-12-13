@@ -29,11 +29,13 @@ func commandLine(n *ThisNode) {
 			lookup(n, &inputs)
 		case "storefile", "file", "f":
 			storeFile(n, &inputs)
-		case "printstate", "p":
+		case "printstate":
 			printState(n,
 				// How to print the successors and fingers
 				!(len(inputs) > 1 && inputs[1] == "false"),
 				!(len(inputs) > 1 && inputs[1] == "list"))
+		case "p":
+			printState(n, false, false)
 
 		// Manual modifications
 		case "setsuccessor", "succ", "s":
@@ -97,6 +99,8 @@ func commandLine(n *ThisNode) {
 			i := 1000000000
 			fixFingers(n, &i)
 
+		case "clear":
+			clear()
 		case "exit", "x":
 			clear()
 			fallthrough

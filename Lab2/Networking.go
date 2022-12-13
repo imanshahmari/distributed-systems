@@ -270,6 +270,9 @@ func sendResponse(statusCode int, body []byte, req *http.Request, conn net.Conn)
 /***** Client *****/
 
 func sendMessage(address NodeAddress, function HandleFunction, msg string) ([]byte, error) {
+	if address == "" {
+		return nil, fmt.Errorf("empty address")
+	}
 
 	url := "http://" + string(address) + "/" + string(function) + "/" + msg
 	if logSendRecieve {
