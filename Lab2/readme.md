@@ -22,3 +22,4 @@ runs the docker container with
 -v connects a volume on computer to docker container
 
 port number in build-arg and -p must be the same!
+go run . -p 1403 -jp 1400

@@ -51,8 +51,9 @@ func main() {
 	ja := flag.String("ja", "localhost", "ip of existing node")
 	jp := flag.Int("jp", 0, "port of existing node")
 	ts := flag.Int("ts", 1000, "time in ms between stabilize")
-	tff := flag.Int("tff", 1000, "time in ms between fix fingers")
+	tff := flag.Int("tff", 5000, "time in ms between fix fingers")
 	tcp := flag.Int("tcp", 1000, "time in ms between check predecessor")
+	tfs := flag.Int("tfs", 10000, "time in ms between fix successor list")
 	r := flag.Int("r", 4, "number of successors")
 	i := flag.String("i", "", "id of client (optional)")
 
@@ -62,15 +63,16 @@ func main() {
 	flag.Parse()
 
 	// Check for missing/wrong flags
-	if /*a == "" ||*/ *p == 0 || (*ja != "localhost" && *jp == 0) || *ts == 0 || *tff == 0 || *tcp == 0 || *r == 0 {
+	if /*a == "" ||*/ *p == 0 || (*ja != "localhost" && *jp == 0) || *ts == 0 || *tff == 0 || *tcp == 0 || *tfs == 0 || *r == 0 {
 		fmt.Print("Flag missing, usage:\n",
 			"-a    <String> ip of client\n",
 			"-p    <Number> port of client\n",
 			"--ja  <String> ip of existing node (leave out to create new network)\n",
 			"--jp  <Number> port of existing node\n",
-			"--ts  <Number> time in ms between stabilize (default=500)\n",
-			"--tff <Number> time in ms between fix fingers (default=500)\n",
-			"--tcp <Number> time in ms between check predecessor (default=500)\n",
+			"--ts  <Number> time in ms between stabilize (default=1000)\n",
+			"--tff <Number> time in ms between fix fingers (default=5000)\n",
+			"--tcp <Number> time in ms between check predecessor (default=1000)\n",
+			"--tfs <Number> time in ms between fix successor list (default=10000)\n",
 			"-r    <Number> number of successors (default=1)\n",
 			"-i    <String> id of client (default is random)\n")
 		return
@@ -114,6 +116,7 @@ func main() {
 	go stabilize(&n, ts)
 	go fixFingers(&n, tff)
 	go checkPredecessor(&n, tcp)
+	go fixSuccessorList(&n, tfs)
 
 	// Handle command line commands
 	commandLine(&n)
@@ -127,7 +130,7 @@ func create(n *ThisNode) {
 		log.Println("Creating network")
 	}
 	addSuccessor(n, n.Node)
-	fillFingerTable(n, n.Node)
+	fillTables(n, n.Node)
 }
 
 // join a Chord ring containing node n' (ja, jp)
@@ -142,14 +145,17 @@ func join(n *ThisNode, ja *string, jp *int) {
 
 	succ := findSuccessor(n, n.Id)
 	addSuccessor(n, succ)
-	fillFingerTable(n, succ)
+	fillTables(n, succ)
 
 	notify(n, succ)
 }
 
-func fillFingerTable(n *ThisNode, entry Node) {
+func fillTables(n *ThisNode, entry Node) {
 	for i := 0; i < len(n.FingerTable); i++ {
 		n.FingerTable[i] = entry
+	}
+	for i := 0; i < len(n.Successor); i++ {
+		n.Successor[i] = entry
 	}
 }
 
@@ -195,6 +201,7 @@ func findSuccessorIteration(n *ThisNode, searchId Key) (Node, bool) {
 	} else {
 		// Iteratively send findSuccessor to next node to continue searching
 		return closestPrecedingNode(n, searchId)
+		//return n.Successor[0], true
 	}
 }
 
@@ -210,11 +217,11 @@ func closestPrecedingNode(n *ThisNode, id Key) (Node, bool) {
 		//fmt.Println(i, finger.Id, id)
 		if isCircleBetween(finger.Id, n.Id, id) {
 			// Check if the node is alive otherwise continue looking
-			_, err := sendMessage(finger.Addr, HandlePing, "")
+			/*_, err := sendMessage(finger.Addr, HandlePing, "")
 			if err != nil {
 				//log.Println(err)
 				continue
-			}
+			}*/
 			returnFinger = finger
 			break
 		}
@@ -223,11 +230,11 @@ func closestPrecedingNode(n *ThisNode, id Key) (Node, bool) {
 	// Check if there is a better (alive) node than the found finger
 	for _, successorNode := range n.Successor {
 		if isCircleBetween(successorNode.Id, returnFinger.Id, id) {
-			_, err := sendMessage(successorNode.Addr, HandlePing, "")
+			/*_, err := sendMessage(successorNode.Addr, HandlePing, "")
 			if err != nil {
 				//log.Println(err)
 				continue
-			}
+			}*/
 			return successorNode, true
 		}
 	}
@@ -286,12 +293,35 @@ func fixFingers(n *ThisNode, tff *int) {
 			log.Println("Fixing fingers")
 		}
 
-		// TODO: This is sending too many requests which gives EOF error on reciever
-		// Could work if once we get a successor, fill all elements up to the value right above successor id, this way we dont find the same one many times, and can use this node as shortcut for remaining nodes (maybe??)
 		for i := 0; i < len(n.FingerTable); i++ {
 			fingerTableEntry := jump(n.Id, i)
 
-			n.FingerTable[i] = findSuccessor(n, fingerTableEntry)
+			if i > 0 && fingerTableEntry < n.FingerTable[i-1].Id {
+				// Avoid unneccesary requests
+				n.FingerTable[i] = n.FingerTable[i-1]
+			} else {
+				n.FingerTable[i] = findSuccessor(n, fingerTableEntry)
+			}
+		}
+	}
+}
+
+func fixSuccessorList(n *ThisNode, tfs *int) {
+	for {
+		time.Sleep(time.Duration(*tfs) * time.Millisecond)
+		if logFunctionCalls {
+			log.Println("Fixing successors")
+		}
+
+		//Fixing the successor list
+		for i := 0; i < len(n.Successor); i++ {
+			if i == 0 {
+				succ := findSuccessor(n, jump(n.Id, 1))
+				n.Successor[i] = succ
+			} else {
+				succ := findSuccessor(n, jump(n.Successor[i-1].Id, 1))
+				n.Successor[i] = succ
+			}
 		}
 	}
 }
@@ -326,15 +356,10 @@ func removeSuccessor(n *ThisNode, i int) {
 	for j := 0; j < i; j++ {
 		if i+j < len(n.Successor) {
 			n.Successor[j] = n.Successor[i+j]
-			n.Successor[i+j] = Node{}
+			n.Successor[i+j] = n.Node
 		} else {
-			n.Successor[j] = Node{}
+			n.Successor[j] = n.Node
 		}
-	}
-
-	// If first node is empty we are alone, then put ourself as successor
-	if n.Successor[0].Addr == "" {
-		n.Successor[0] = n.Node
 	}
 }
 

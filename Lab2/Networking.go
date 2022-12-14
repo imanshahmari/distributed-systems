@@ -122,7 +122,7 @@ func handle(n *ThisNode, conn *net.Conn, wg *sync.WaitGroup) {
 
 func handleFindSuccessor(n *ThisNode, id Key, req *http.Request, conn *net.Conn) {
 	succ, isRelayAddr := findSuccessorIteration(n, id)
-
+	//fmt.Print(".")
 	msg := Communication{
 		Node:        succ,
 		IsRelayAddr: isRelayAddr,
