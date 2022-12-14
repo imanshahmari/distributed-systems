@@ -57,7 +57,6 @@ func listen(n *ThisNode, port int) {
 	for {
 		conn, err := listner.Accept()
 		if err != nil {
-			log.Println("error listen accept", err)
 			// skip the handle function if error
 			continue
 		}

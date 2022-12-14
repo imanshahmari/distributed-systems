@@ -53,7 +53,7 @@ func main() {
 	ts := flag.Int("ts", 1000, "time in ms between stabilize")
 	tff := flag.Int("tff", 5000, "time in ms between fix fingers")
 	tcp := flag.Int("tcp", 1000, "time in ms between check predecessor")
-	tfs := flag.Int("tfs", 10000, "time in ms between fix successor list")
+	tfs := flag.Int("tfs", 1000, "time in ms between fix successor list")
 	r := flag.Int("r", 4, "number of successors")
 	i := flag.String("i", "", "id of client (optional)")
 
@@ -217,11 +217,11 @@ func closestPrecedingNode(n *ThisNode, id Key) (Node, bool) {
 		//fmt.Println(i, finger.Id, id)
 		if isCircleBetween(finger.Id, n.Id, id) {
 			// Check if the node is alive otherwise continue looking
-			/*_, err := sendMessage(finger.Addr, HandlePing, "")
+			_, err := sendMessage(finger.Addr, HandlePing, "")
 			if err != nil {
 				//log.Println(err)
 				continue
-			}*/
+			}
 			returnFinger = finger
 			break
 		}
@@ -230,11 +230,11 @@ func closestPrecedingNode(n *ThisNode, id Key) (Node, bool) {
 	// Check if there is a better (alive) node than the found finger
 	for _, successorNode := range n.Successor {
 		if isCircleBetween(successorNode.Id, returnFinger.Id, id) {
-			/*_, err := sendMessage(successorNode.Addr, HandlePing, "")
+			_, err := sendMessage(successorNode.Addr, HandlePing, "")
 			if err != nil {
 				//log.Println(err)
 				continue
-			}*/
+			}
 			return successorNode, true
 		}
 	}
@@ -264,6 +264,7 @@ func stabilize(n *ThisNode, tc *int) {
 			log.Println("error stabilize", err)
 		}
 		if x.Addr == "" {
+			notify(n, x)
 			continue
 		}
 
@@ -282,6 +283,7 @@ func notify(n *ThisNode, succ Node) {
 		log.Println("Notifying")
 	}
 	sendMessage(succ.Addr, HandleNotify, string(n.Addr)+"/"+string(n.Id))
+	replicateThisBucketElems(n)
 }
 
 // called periodically. refreshes finger table entries.
@@ -328,18 +330,18 @@ func fixSuccessorList(n *ThisNode, tfs *int) {
 
 // Returns the first alive node in successor list
 func getSuccessor(n *ThisNode) Node {
-	for i, succ := range n.Successor {
+	for _, succ := range n.Successor {
 		msg, _ := sendMessage(succ.Addr, HandlePing, "")
 
 		if string(msg) == "200 OK" {
 			// Move successors to have the first alive one at 0
-			removeSuccessor(n, i)
+			//removeSuccessor(n, i)
 			return succ
 		}
 	}
 
 	// If we get here we are alone, set successor 0 to self
-	removeSuccessor(n, len(n.Successor))
+	//removeSuccessor(n, len(n.Successor))
 	return n.Node
 }
 
@@ -350,17 +352,6 @@ func addSuccessor(n *ThisNode, succ Node) {
 		n.Successor[i-1] = n.Successor[i]
 	}
 	n.Successor[0] = succ
-}
-
-func removeSuccessor(n *ThisNode, i int) {
-	for j := 0; j < i; j++ {
-		if i+j < len(n.Successor) {
-			n.Successor[j] = n.Successor[i+j]
-			n.Successor[i+j] = n.Node
-		} else {
-			n.Successor[j] = n.Node
-		}
-	}
 }
 
 // n.id + 2^i where i is the index of fingertable
@@ -412,14 +403,20 @@ func replicateSingleBucketElem(n *ThisNode, filename string, storingNode Key) {
 	}
 }
 
-func replicatePredecessorsBucketElems(n *ThisNode) {
+func replicateThisBucketElems(n *ThisNode) {
 	pred := string(n.Predecessor.Id)
 
 	for filename, storingNode := range n.Bucket {
 		id := hashString(filename)
-		if id < pred {
+		if id > pred {
 			replicateSingleBucketElem(n, filename, storingNode)
 		}
+	}
+}
+
+func replicatePredecessorsBucketElems(n *ThisNode) {
+	for filename, storingNode := range n.Bucket {
+		replicateSingleBucketElem(n, filename, storingNode)
 
 	}
 }

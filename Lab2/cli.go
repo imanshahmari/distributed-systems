@@ -60,7 +60,7 @@ func commandLine(n *ThisNode) {
 			}
 			n.Bucket[inputs[1]] = Key(inputs[2])
 			fallthrough
-		case "printbucket":
+		case "printbucket", "pb":
 			for file, key := range n.Bucket {
 				hash := hashString(file)
 				fmt.Println(shortStr(hash), file, "\t", shortStr(string(key)))
@@ -185,10 +185,10 @@ func printState(n *ThisNode, printAll bool, printTable bool) {
 		// Only show first
 		if !printAll {
 			fmt.Printf("%3d\t%s\t%s\n", i, succ.Addr, shortStr(string(succ.Id)))
-			break
+			//break
+		} else {
+			fmt.Printf("%3d\t%s\t%s\n", i, succ.Addr, succ.Id)
 		}
-
-		fmt.Printf("%3d\t%s\t%s\n", i, succ.Addr, succ.Id)
 	}
 
 	if printAll {
