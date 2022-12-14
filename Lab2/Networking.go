@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 )
@@ -24,6 +25,8 @@ const (
 	HandlePredecessor HandleFunction = "predecessor"
 	HandleLookup      HandleFunction = "lookup"
 	HandleReplicate   HandleFunction = "replicate"
+	HandleGetFile     HandleFunction = "getfile"
+	HandlePostFile    HandleFunction = "postfile"
 )
 
 // Response type
@@ -34,6 +37,7 @@ type Communication struct {
 
 var (
 	openThreads    = 0
+	maxThreads     = 20
 	logSendRecieve = false
 )
 
@@ -57,11 +61,12 @@ func listen(n *ThisNode, port int) {
 	for {
 		conn, err := listner.Accept()
 		if err != nil {
+			log.Println("error listen accept", err)
 			// skip the handle function if error
 			continue
 		}
 
-		for openThreads >= 10 {
+		for openThreads >= maxThreads {
 			wg.Wait()
 		}
 
@@ -78,7 +83,7 @@ func handle(n *ThisNode, conn *net.Conn, wg *sync.WaitGroup) {
 
 	req, err := http.ReadRequest(bufio.NewReader(*conn))
 	if err != nil {
-		log.Println("error handle", err)
+		// stop handling if request is invalid
 		return
 	}
 
@@ -108,6 +113,11 @@ func handle(n *ThisNode, conn *net.Conn, wg *sync.WaitGroup) {
 	case HandleReplicate:
 		// When replicating we only store
 		handleStoreFile(n, p[2], Key(p[3]), req, conn)
+
+	case HandleGetFile:
+		handleGetFile(p[2], req, conn)
+	case HandlePostFile:
+		handlePostFile(n, p[2], req, conn)
 
 	case HandleLookup:
 		handleLookup(n, p[2], req, conn)
@@ -175,12 +185,13 @@ func handlePredecessor(n *ThisNode, req *http.Request, conn *net.Conn) {
 	sendResponse(200, body, req, conn)
 }
 
+// Handles the cli command storefile
 func handleStoreFile(n *ThisNode, filename string, id Key, req *http.Request, conn *net.Conn) {
 	n.Bucket[filename] = id
 	sendResponse(200, nil, req, conn)
 }
 
-/*
+// Retrieve file data from a node
 func handleGetFile(filePath string, req *http.Request, conn *net.Conn) {
 
 	checkFiletype(filePath, req, conn)
@@ -193,7 +204,8 @@ func handleGetFile(filePath string, req *http.Request, conn *net.Conn) {
 	sendResponse(200, data, req, conn)
 }
 
-func handlePostFile(filePath string, req *http.Request, conn *net.Conn) {
+// Storing the file data
+func handlePostFile(n *ThisNode, filePath string, req *http.Request, conn *net.Conn) {
 	err := checkFiletype(filePath, req, conn)
 	if err != nil {
 		sendResponse(400, nil, req, conn)
@@ -210,6 +222,7 @@ func handlePostFile(filePath string, req *http.Request, conn *net.Conn) {
 		return
 	}
 
+	n.FilesOnThisNode[filePath] = false
 	sendResponse(200, nil, req, conn)
 }
 
@@ -227,7 +240,8 @@ func checkFiletype(filePath string, req *http.Request, conn *net.Conn) error {
 	}
 	return fmt.Errorf("filetype not allowed")
 }
-*/
+
+//*/
 
 func sendResponse(statusCode int, body []byte, req *http.Request, conn *net.Conn) {
 	status := ""
@@ -291,6 +305,31 @@ func sendMessage(address NodeAddress, function HandleFunction, msg string) ([]by
 
 	// Successfully got response
 	return body, nil
+}
+
+func postReplicate(n *ThisNode) {
+	for filename, responsability := range n.FilesOnThisNode {
+		if !responsability {
+			// We take over responsability and replicates to next node
+
+			data, err := os.ReadFile(filename)
+			if err != nil {
+				log.Println("error postReplicate", err)
+				continue
+			}
+
+			contentType := http.DetectContentType(data)
+			reader := bytes.NewReader(data)
+
+			_, err = http.Post(string(n.Successor[0].Addr), contentType, reader)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+
+			storeFile(n, filename)
+		}
+	}
 }
 
 // Parse the respons from findSuccessor

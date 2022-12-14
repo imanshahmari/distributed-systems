@@ -35,7 +35,8 @@ type ThisNode struct {
 	Predecessor Node
 	Successor   []Node
 
-	Bucket map[string]Key
+	Bucket          map[string]Key
+	FilesOnThisNode map[string]bool
 }
 
 var (

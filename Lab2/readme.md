@@ -23,3 +23,19 @@ runs the docker container with
 
 port number in build-arg and -p must be the same!
 go run . -p 1403 -jp 1400
+
+
+
+
+
+### Known bugs (dont do this)
+After replication of files the replication of the storing node is not correct
+( ie the first bucket has the correctly updated storingNode but it is not replicated automatically to the next one)
+
+Too short time interval for tff creates EOF errors
+
+(fixed??) Killing nodes too quickly can result in missing predecessors/successors
+
+If nodes are initialized with small ids the finger table does not work
+
+Figer table wrong????

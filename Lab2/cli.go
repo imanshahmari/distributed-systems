@@ -29,7 +29,10 @@ func commandLine(n *ThisNode) {
 		case "lookup", "l":
 			lookup(n, &inputs)
 		case "storefile", "file", "f":
-			storeFile(n, &inputs)
+			if len(inputs) < 2 {
+				addInput(&inputs, "Enter name of file: ")
+			}
+			storeFile(n, inputs[1])
 		case "printstate":
 			printState(n,
 				// How to print the successors and fingers
@@ -155,17 +158,15 @@ func lookup(n *ThisNode, inputs *[]string) {
 	//fmt.Println("Address of resource is: ", succ)
 }
 
-func storeFile(n *ThisNode, inputs *[]string) {
-	if len(*inputs) < 2 {
-		addInput(inputs, "Enter name of file: ")
-	}
-	fileHash := Key(hashString((*inputs)[1]))
+func storeFile(n *ThisNode, filename string) {
+	fileHash := Key(hashString(filename))
 	succ := findSuccessor(n, fileHash)
 
-	_, err := sendMessage(succ.Addr, HandleStoreFile, (*inputs)[1]+"/"+string(n.Id))
+	_, err := sendMessage(succ.Addr, HandleStoreFile, filename+"/"+string(n.Id))
 	if err != nil {
 		log.Println("error storefile", err)
 	}
+	n.FilesOnThisNode[filename] = true
 }
 
 func printState(n *ThisNode, printAll bool, printTable bool) {
