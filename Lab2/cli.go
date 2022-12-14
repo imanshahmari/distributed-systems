@@ -19,12 +19,12 @@ func commandLine(n *ThisNode) {
 		input, _ := reader.ReadString('\n')
 
 		// Format string (remove newline and to lower case letters)
-		input = strings.ToLower(input[:len(input)-1])
+		input = input[:len(input)-1]
 		//fmt.Println(input)
 
 		inputs := strings.Split(input, " ")
 
-		switch inputs[0] {
+		switch strings.ToLower(inputs[0]) {
 		// Mandatory functions
 		case "lookup", "l":
 			lookup(n, &inputs)
