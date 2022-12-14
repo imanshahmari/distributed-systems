@@ -84,6 +84,7 @@ func main() {
 	n.Bucket = make(map[string]Key)
 	n.Successor = make([]Node, *r)
 	n.FingerTable = make([]Node, 160)
+	n.FilesOnThisNode = make(map[string]bool)
 
 	if *i == "" {
 		// If the id is not defined by comand line argument, generate it from hashing ip and port
@@ -155,9 +156,9 @@ func fillTables(n *ThisNode, entry Node) {
 	for i := 0; i < len(n.FingerTable); i++ {
 		n.FingerTable[i] = entry
 	}
-	for i := 0; i < len(n.Successor); i++ {
-		n.Successor[i] = entry
-	}
+	//for i := 0; i < len(n.Successor); i++ {
+	//	n.Successor[i] = entry
+	//}
 }
 
 func findSuccessor(n *ThisNode, searchId Key) Node {
@@ -187,22 +188,21 @@ func findSuccessor(n *ThisNode, searchId Key) Node {
  */
 func findSuccessorIteration(n *ThisNode, searchId Key) (Node, bool) {
 	curr := n.Id
-	succ := n.Successor[0].Id
-	//succAddr := n.Successor[0].Addr
+	succ := getSuccessor(n)
 
 	// If r is between c and s, or if successor wraps around
-	if succ != "" && isCircleBetweenIncludingEnd(searchId, curr, succ) {
+	if succ.Id != "" && isCircleBetweenIncludingEnd(searchId, curr, succ.Id) {
 		// The return- is between current- and successor- address' -> found successor
-		return n.Successor[0], false
+		return succ, false
 
-	} else if succ == "" {
+	} else if succ.Id == "" {
 		// If successor id is empty we have to send request to the address of
 		// successor as the closestPrecNode will not work unless id is defined
-		return n.Successor[0], true
+		return succ, true
 	} else {
 		// Iteratively send findSuccessor to next node to continue searching
 		return closestPrecedingNode(n, searchId)
-		//return n.Successor[0], true
+		//return succ, true
 	}
 }
 
@@ -284,7 +284,10 @@ func notify(n *ThisNode, succ Node) {
 		log.Println("Notifying")
 	}
 	sendMessage(succ.Addr, HandleNotify, string(n.Addr)+"/"+string(n.Id))
+	// replicate bucket
 	replicateThisBucketElems(n)
+	// replicate files
+	postReplicate(n, false)
 }
 
 // called periodically. refreshes finger table entries.
@@ -299,7 +302,8 @@ func fixFingers(n *ThisNode, tff *int) {
 		for i := 0; i < len(n.FingerTable); i++ {
 			fingerTableEntry := jump(n.Id, i)
 
-			if i > 0 && fingerTableEntry < n.FingerTable[i-1].Id {
+			// TODO isCercleBetween correct??
+			if i > 0 && isCircleBetween(fingerTableEntry, n.Id, n.FingerTable[i-1].Id) {
 				// Avoid unneccesary requests
 				n.FingerTable[i] = n.FingerTable[i-1]
 			} else {
@@ -319,24 +323,25 @@ func fixSuccessorList(n *ThisNode, tfs *int) {
 		//Fixing the successor list
 		for i := 0; i < len(n.Successor); i++ {
 			if i == 0 {
-				succ := findSuccessor(n, jump(n.Id, 1))
-				n.Successor[i] = succ
+				//succ := findSuccessor(n, jump(n.Id, 1))
+				//n.Successor[i] = succ
 			} else {
 				succ := findSuccessor(n, jump(n.Successor[i-1].Id, 1))
 				n.Successor[i] = succ
 			}
 		}
+		//fmt.Println("fix", n.Successor[0].Addr)
 	}
 }
 
 // Returns the first alive node in successor list
 func getSuccessor(n *ThisNode) Node {
-	for _, succ := range n.Successor {
+	for i, succ := range n.Successor {
 		msg, _ := sendMessage(succ.Addr, HandlePing, "")
 
 		if string(msg) == "200 OK" {
 			// Move successors to have the first alive one at 0
-			//removeSuccessor(n, i)
+			removeSuccessor(n, i)
 			return succ
 		}
 	}
@@ -353,6 +358,23 @@ func addSuccessor(n *ThisNode, succ Node) {
 		n.Successor[i-1] = n.Successor[i]
 	}
 	n.Successor[0] = succ
+	//fmt.Println("add", n.Successor[0].Addr)
+}
+
+func removeSuccessor(n *ThisNode, i int) {
+	for j := 0; j < i; j++ {
+		if i+j < len(n.Successor) {
+			n.Successor[j] = n.Successor[i+j]
+			n.Successor[i+j] = Node{}
+		} else {
+			n.Successor[j] = Node{}
+		}
+	}
+
+	// If first node is empty we are alone, then put ourself as successor
+	if n.Successor[0].Addr == "" {
+		n.Successor[0] = n.Node
+	}
 }
 
 // n.id + 2^i where i is the index of fingertable
@@ -390,6 +412,8 @@ func checkPredecessor(n *ThisNode, tcp *int) {
 			// This node is now responsible for the elements
 			// replicate so that there exists two replicas of bucket elements
 			replicatePredecessorsBucketElems(n)
+			// Replicate files and take responsibility from failed predecessor
+			postReplicate(n, true)
 
 			// Set the predecessor to nil to not get stuck in loop
 			n.Predecessor = Node{}

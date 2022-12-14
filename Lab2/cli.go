@@ -33,6 +33,8 @@ func commandLine(n *ThisNode) {
 				addInput(&inputs, "Enter name of file: ")
 			}
 			storeFile(n, inputs[1])
+
+			postReplicateOne("http://"+string(n.Successor[0].Addr)+"/"+string(HandlePostFile)+"/", inputs[1])
 		case "printstate":
 			printState(n,
 				// How to print the successors and fingers

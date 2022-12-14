@@ -211,7 +211,7 @@ func handlePostFile(n *ThisNode, filePath string, req *http.Request, conn *net.C
 		sendResponse(400, nil, req, conn)
 	}
 
-	localfile, err := os.Create(filePath)
+	localfile, err := os.Create("test_" + filePath)
 	if err != nil {
 		log.Println(err)
 	}
@@ -307,29 +307,47 @@ func sendMessage(address NodeAddress, function HandleFunction, msg string) ([]by
 	return body, nil
 }
 
-func postReplicate(n *ThisNode) {
+func postReplicate(n *ThisNode, predecessor bool) {
+	url := "http://" + string(n.Successor[0].Addr) + "/" + string(HandlePostFile) + "/"
+
 	for filename, responsability := range n.FilesOnThisNode {
-		if !responsability {
+		if !responsability && predecessor {
 			// We take over responsability and replicates to next node
-
-			data, err := os.ReadFile(filename)
-			if err != nil {
-				log.Println("error postReplicate", err)
-				continue
-			}
-
-			contentType := http.DetectContentType(data)
-			reader := bytes.NewReader(data)
-
-			_, err = http.Post(string(n.Successor[0].Addr), contentType, reader)
+			err := postReplicateOne(url, filename)
 			if err != nil {
 				fmt.Println(err)
 				continue
 			}
 
+			// Take over responsability and send the updated node id to chord ring bucket
 			storeFile(n, filename)
+
+		} else if responsability && !predecessor {
+			// Replicate to have a backup of the data in the system
+			err := postReplicateOne(url, filename)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
 		}
 	}
+}
+
+func postReplicateOne(url string, filename string) error {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return err
+	}
+
+	contentType := http.DetectContentType(data)
+	reader := bytes.NewReader(data)
+
+	_, err = http.Post(url+filename, contentType, reader)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Parse the respons from findSuccessor
