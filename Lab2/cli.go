@@ -68,7 +68,13 @@ func commandLine(n *ThisNode) {
 		case "printbucket", "pb":
 			for file, key := range n.Bucket {
 				hash := hashString(file)
-				fmt.Println(shortStr(hash), file, "\t", shortStr(string(key)))
+
+				replica := "replica"
+				if isCircleBetweenIncludingEnd(Key(hash), n.Predecessor.Id, n.Id) {
+					replica = "primary"
+				}
+
+				fmt.Println(shortStr(hash), file, "\t", shortStr(string(key)), replica)
 			}
 		case "findsuccessor":
 			if len(inputs) < 2 {

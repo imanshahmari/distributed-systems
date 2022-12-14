@@ -254,7 +254,6 @@ func closestPrecedingNode(n *ThisNode, id Key) (Node, bool) {
 // successor, and tells the successor about n.
 func stabilize(n *ThisNode, tc *int) {
 	for {
-		time.Sleep(time.Duration(*tc) * time.Millisecond)
 		if logFunctionCalls {
 			log.Println("Stabilizing")
 		}
@@ -275,6 +274,7 @@ func stabilize(n *ThisNode, tc *int) {
 			addSuccessor(n, x)
 			notify(n, x)
 		}
+		time.Sleep(time.Duration(*tc) * time.Millisecond)
 	}
 }
 
@@ -294,7 +294,6 @@ func notify(n *ThisNode, succ Node) {
 // next stores the index of the next finger to fix.
 func fixFingers(n *ThisNode, tff *int) {
 	for {
-		time.Sleep(time.Duration(*tff) * time.Millisecond)
 		if logFunctionCalls {
 			log.Println("Fixing fingers")
 		}
@@ -310,12 +309,12 @@ func fixFingers(n *ThisNode, tff *int) {
 				n.FingerTable[i] = findSuccessor(n, fingerTableEntry)
 			}
 		}
+		time.Sleep(time.Duration(*tff) * time.Millisecond)
 	}
 }
 
 func fixSuccessorList(n *ThisNode, tfs *int) {
 	for {
-		time.Sleep(time.Duration(*tfs) * time.Millisecond)
 		if logFunctionCalls {
 			log.Println("Fixing successors")
 		}
@@ -331,6 +330,7 @@ func fixSuccessorList(n *ThisNode, tfs *int) {
 			}
 		}
 		//fmt.Println("fix", n.Successor[0].Addr)
+		time.Sleep(time.Duration(*tfs) * time.Millisecond)
 	}
 }
 
@@ -397,7 +397,6 @@ func jump(id Key, fingerentry int) Key {
 // called periodically. checks whether predecessor has failed
 func checkPredecessor(n *ThisNode, tcp *int) {
 	for {
-		time.Sleep(time.Duration(*tcp) * time.Millisecond)
 		if logFunctionCalls {
 			log.Println("Checking predecessor")
 		}
@@ -418,6 +417,7 @@ func checkPredecessor(n *ThisNode, tcp *int) {
 			// Set the predecessor to nil to not get stuck in loop
 			n.Predecessor = Node{}
 		}
+		time.Sleep(time.Duration(*tcp) * time.Millisecond)
 	}
 }
 
