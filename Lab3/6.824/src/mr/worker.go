@@ -5,7 +5,8 @@ import (
 	"hash/fnv"
 	"log"
 	"net/rpc"
-	"time"
+	"os"
+	"sort"
 )
 
 // Map functions return a slice of KeyValue.
@@ -13,6 +14,14 @@ type KeyValue struct {
 	Key   string
 	Value string
 }
+
+// for sorting by key.
+type ByKey []KeyValue
+
+// for sorting by key.
+func (a ByKey) Len() int           { return len(a) }
+func (a ByKey) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
 
 // use ihash(key) % NReduce to choose the reduce
 // task number for each KeyValue emitted by Map.
@@ -33,12 +42,49 @@ func Worker(mapf func(string, string) []KeyValue,
 			return
 		}
 
-		// Do the map reduce on the task
-		time.Sleep(time.Second * 5)
+		//time.Sleep(time.Second * 5)
+
+		data, err := os.ReadFile(task.Filename)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+
+		// Map (for ws: create a dictionary of words (with value 1))
+		kva := mapf(task.Filename, string(data))
+
+		sort.Sort(ByKey(kva))
+
+		// Reduce (for ws: count all occurances of word)
+		// Create outputfile
+		//reduceId := 0
+		filename := fmt.Sprintf("mr-out-%d", task.TaskId) //, reduceId)
+		file, _ := os.Create(filename)
+		defer file.Close()
+
+		//reduce(task.Filename, kva, reducef)
+		temp := make(map[string]([]string))
+		for _, keyVal := range kva {
+			temp[keyVal.Key] = append(temp[keyVal.Key], keyVal.Value)
+		}
+
+		for key, list := range temp {
+			value := reducef(key, list)
+			fmt.Fprintf(file, "%v %v\n", key, value)
+		}
 
 		// Send that we finished task
 		FinishedTask(task)
+
+		// TODO for debugging, remove before publishing
+		if testing {
+			return
+		}
 	}
+}
+
+func reduce(filename string, kva []KeyValue,
+	reducef func(string, []string) string) {
 }
 
 func AskForTask() (*Task, error) {

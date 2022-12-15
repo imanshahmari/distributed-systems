@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+const testing = false
+
 type TaskData struct {
 	filename    string
 	stage       string // one of ["waiting", "running", "done"]
@@ -41,8 +43,11 @@ func (c *Coordinator) NextTask(args *ExampleArgs, reply *Task) error {
 		var runtime time.Duration = time.Since(task.startedTime)
 
 		// Give first task that is unassigned or expired (too long runtime)
-		if task.stage == "waiting" ||
+		// TODO for debugging, remove testing here before publishing
+		if testing || task.stage == "waiting" ||
 			(task.stage == "running" && runtime > maxTimeout) {
+			log.Println("Running ", task.filename)
+
 			// Reply with the filename to process and index in list
 			reply.Filename = task.filename
 			reply.TaskId = i
@@ -56,10 +61,16 @@ func (c *Coordinator) NextTask(args *ExampleArgs, reply *Task) error {
 	}
 
 	c.done = true
-	return fmt.Errorf("no next task")
+	return fmt.Errorf("no next task, exiting")
 }
 
 func (c *Coordinator) TaskDone(args *Task, reply *Task) error {
+	log.Println("Done    ", args.Filename)
+
+	// Safely write to coordinator
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	c.tasks[args.TaskId].stage = "done"
 	return nil
 }
@@ -95,10 +106,10 @@ func (c *Coordinator) Done() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	for _, task := range c.tasks {
-		fmt.Print(task.filename, " ", task.stage, "\t")
-	}
-	fmt.Print("\n")
+	//for _, task := range c.tasks {
+	//	fmt.Print(task.filename, " ", task.stage, "\t")
+	//}
+	//fmt.Print("\n")
 	return c.done
 }
 
