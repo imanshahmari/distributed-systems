@@ -10,16 +10,6 @@ import (
 	"time"
 )
 
-/*
-TODOs:
-	- Change http post to sftp
-	- Make secure with https
-	- Replication of files
-	- Encrypt files before sending
-	- Update readme
-	- Fix docker to create multiple servers with different ips
-*/
-
 type Key string
 
 type NodeAddress string
