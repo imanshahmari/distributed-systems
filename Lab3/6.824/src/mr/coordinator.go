@@ -13,6 +13,7 @@ import (
 
 const printStuff = false
 
+// Only internal representation of a task (see rpc.go for communication)
 type TaskData struct {
 	filename    string
 	stage       string // one of ["waiting", "running", "done"]
@@ -21,7 +22,6 @@ type TaskData struct {
 }
 
 type Coordinator struct {
-	// Your definitions here.
 	mu      sync.Mutex // Allows for mutual exclusion of threads to avoid race conditions
 	nReduce int
 	nMap    int
@@ -91,6 +91,7 @@ func (c *Coordinator) TaskDone(args *Task, reply *Task) error {
 
 	c.tasks[args.TaskId].stage = "done"
 
+	// Check if all map tasks are done
 	if !c.mapDone {
 		for _, task := range c.tasks {
 			if task.isMap && task.stage != "done" {
@@ -101,6 +102,7 @@ func (c *Coordinator) TaskDone(args *Task, reply *Task) error {
 		c.mapDone = true
 	}
 
+	// Check if all tasks are done
 	for _, task := range c.tasks {
 		if !task.isMap && task.stage != "done" {
 			return nil

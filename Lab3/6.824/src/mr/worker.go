@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"io/ioutil"
 	"log"
 	"net/rpc"
 	"os"
@@ -79,22 +80,35 @@ func mapWorker(task *Task, mapf func(string, string) []KeyValue) error {
 	}
 
 	for i, kva := range tempFileData {
-		// Save to a file with name of format "out-[map nr]-[reduce nr]"
-		filename := fmt.Sprintf("mr-%d-%d", task.TaskId, i)
-		f, err := os.Create(filename)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-
 		// Convert keyvalue list to json
 		data, err := json.Marshal(kva)
 		if err != nil {
 			return err
 		}
 
+		// Save to a file with name of format "out-[map nr]-[reduce nr]"
+		filename := fmt.Sprintf("mr-%d-%d", task.TaskId, i)
+
+		// Use tempfile to avoid reading incomplete files
+		f, err := ioutil.TempFile("", filename+"-*")
+		// f, err := os.Create(filename)
+		if err != nil {
+			return err
+		}
+
 		// Write to intermediate file
 		_, err = f.Write(data)
+		if err != nil {
+			f.Close()
+			return err
+		}
+
+		// Get name of file
+		tempfilename := f.Name()
+		f.Close()
+
+		// Rename to the correct name
+		err = os.Rename(tempfilename, filename)
 		if err != nil {
 			return err
 		}
@@ -130,11 +144,13 @@ func reduceWorker(task *Task, reducef func(string, []string) string) error {
 	// Reduce (for ws: count all occurances of word)
 	// Create outputfile
 	filename := fmt.Sprintf("mr-out-%s", task.Filename)
-	file, err := os.Create(filename)
+
+	// Use tempfile to avoid reading incomplete files
+	f, err := ioutil.TempFile("", filename+"-*")
+	//file, err := os.Create(filename)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
 
 	// Make a list per key for the reduce to count
 	temp := make(map[string]([]string))
@@ -145,7 +161,17 @@ func reduceWorker(task *Task, reducef func(string, []string) string) error {
 	// Reduce and append line to file
 	for key, list := range temp {
 		value := reducef(key, list)
-		fmt.Fprintf(file, "%v %v\n", key, value)
+		fmt.Fprintf(f, "%v %v\n", key, value)
+	}
+
+	// Get name of file
+	tempfilename := f.Name()
+	f.Close()
+
+	// Rename to the correct name
+	err = os.Rename(tempfilename, filename)
+	if err != nil {
+		return err
 	}
 
 	// Send that we finished task
