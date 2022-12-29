@@ -42,7 +42,9 @@ func Worker(mapf func(string, string) []KeyValue,
 		// Get a new task
 		task, err := AskForTask()
 		if err != nil {
-			fmt.Println(err)
+			if printStuff {
+				fmt.Println(err)
+			}
 			return
 		}
 
@@ -53,15 +55,12 @@ func Worker(mapf func(string, string) []KeyValue,
 		}
 
 		if task.IsMap {
-			err := mapWorker(task, mapf)
-			if err != nil {
-				fmt.Println(err)
-			}
+			err = mapWorker(task, mapf)
 		} else {
-			err := reduceWorker(task, reducef)
-			if err != nil {
-				fmt.Println(err)
-			}
+			err = reduceWorker(task, reducef)
+		}
+		if printStuff && err != nil {
+			fmt.Println(err)
 		}
 	}
 }
@@ -166,7 +165,9 @@ func AskForTask() (*Task, error) {
 
 	ok := call("Coordinator.NextTask", &args, &reply)
 	if ok {
-		fmt.Printf("reply.filename %v\n", reply.Filename)
+		if printStuff {
+			fmt.Printf("reply.filename %v\n", reply.Filename)
+		}
 	} else {
 		//fmt.Printf("call failed!\n")
 		return &reply, fmt.Errorf("failed or no more tasks, quitting")
@@ -222,6 +223,8 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 		return true
 	}
 
-	fmt.Println(err)
+	if printStuff || fmt.Sprint(err) != "no next task, exiting" {
+		fmt.Println(err)
+	}
 	return false
 }

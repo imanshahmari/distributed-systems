@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const testing = false
+const printStuff = false
 
 type TaskData struct {
 	filename    string
@@ -50,7 +50,10 @@ func (c *Coordinator) NextTask(args *ExampleArgs, reply *Task) error {
 		if (task.isMap || c.mapDone) &&
 			(task.stage == "waiting" ||
 				(task.stage == "running" && runtime > maxTimeout)) {
-			log.Println("Running ", task.filename)
+
+			if printStuff {
+				log.Println("Running ", task.filename)
+			}
 
 			// Reply with the filename to process and index in list
 			reply.Filename = task.filename
@@ -80,7 +83,9 @@ func (c *Coordinator) NextTask(args *ExampleArgs, reply *Task) error {
 }
 
 func (c *Coordinator) TaskDone(args *Task, reply *Task) error {
-	log.Println("Done    ", args.Filename)
+	if printStuff {
+		log.Println("Done    ", args.Filename)
+	}
 
 	// Safely write to coordinator
 	c.mu.Lock()
