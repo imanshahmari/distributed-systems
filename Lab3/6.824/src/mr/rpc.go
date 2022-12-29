@@ -28,7 +28,9 @@ type ExampleReply struct {
 
 type Task struct {
 	Filename string
+	NMax     int // for map = nReduce, for reduce = len(files)
 	TaskId   int
+	IsMap    bool
 }
 
 // Cook up a unique-ish UNIX-domain socket name
