@@ -8,7 +8,6 @@ import (
 	"net/rpc"
 	"os"
 	"time"
-	//"sync"
 )
 
 // Map functions return a slice of KeyValue.
@@ -16,14 +15,6 @@ type KeyValue struct {
 	Key   string
 	Value string
 }
-
-// for sorting by key.
-type ByKey []KeyValue
-
-// for sorting by key.
-func (a ByKey) Len() int           { return len(a) }
-func (a ByKey) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
 
 // use ihash(key) % NReduce to choose the reduce
 // task number for each KeyValue emitted by Map.
@@ -36,8 +27,6 @@ func ihash(key string) int {
 // main/mrworker.go calls this function.
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
-	//var wg sync.WaitGroup
-
 	for {
 		// Get a new task
 		task, err := AskForTask()
@@ -54,11 +43,13 @@ func Worker(mapf func(string, string) []KeyValue,
 			continue
 		}
 
+		// Is this task a map or reduce
 		if task.IsMap {
 			err = mapWorker(task, mapf)
 		} else {
 			err = reduceWorker(task, reducef)
 		}
+		// Only print error from MapReduce if we want to print stuff
 		if printStuff && err != nil {
 			fmt.Println(err)
 		}
@@ -66,6 +57,7 @@ func Worker(mapf func(string, string) []KeyValue,
 }
 
 func mapWorker(task *Task, mapf func(string, string) []KeyValue) error {
+	// Read textfile
 	data, err := os.ReadFile(task.Filename)
 	if err != nil {
 		return err
@@ -86,9 +78,8 @@ func mapWorker(task *Task, mapf func(string, string) []KeyValue) error {
 		tempFileData[i] = append(tempFileData[i], keyVal)
 	}
 
-	// Save each reduce to a file with name of format "out-[map nr]-[reduce nr]"
 	for i, kva := range tempFileData {
-
+		// Save to a file with name of format "out-[map nr]-[reduce nr]"
 		filename := fmt.Sprintf("mr-%d-%d", task.TaskId, i)
 		f, err := os.Create(filename)
 		if err != nil {
@@ -96,11 +87,13 @@ func mapWorker(task *Task, mapf func(string, string) []KeyValue) error {
 		}
 		defer f.Close()
 
+		// Convert keyvalue list to json
 		data, err := json.Marshal(kva)
 		if err != nil {
 			return err
 		}
 
+		// Write to intermediate file
 		_, err = f.Write(data)
 		if err != nil {
 			return err
@@ -108,21 +101,22 @@ func mapWorker(task *Task, mapf func(string, string) []KeyValue) error {
 
 	}
 
+	// Send that we finished map task
 	FinishedTask(task)
 	return nil
 }
 
 func reduceWorker(task *Task, reducef func(string, []string) string) error {
-	// Read the intermediate files
-
 	var kva []KeyValue
 
 	for i := 0; i < task.NMax; i++ {
+		// Read all intermediate map files for this reduce
 		data, err := os.ReadFile(fmt.Sprintf("mr-%d-%s", i, task.Filename))
 		if err != nil {
 			return err
 		}
 
+		// Convert json to kva list
 		var kvaTemp []KeyValue
 		err = json.Unmarshal(data, &kvaTemp)
 		if err != nil {
@@ -135,20 +129,20 @@ func reduceWorker(task *Task, reducef func(string, []string) string) error {
 
 	// Reduce (for ws: count all occurances of word)
 	// Create outputfile
-	//reduceId := 0
-	filename := fmt.Sprintf("mr-out-%s", task.Filename) //, reduceId)
+	filename := fmt.Sprintf("mr-out-%s", task.Filename)
 	file, err := os.Create(filename)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
 
-	//reduce(task.Filename, kva, reducef)
+	// Make a list per key for the reduce to count
 	temp := make(map[string]([]string))
 	for _, keyVal := range kva {
 		temp[keyVal.Key] = append(temp[keyVal.Key], keyVal.Value)
 	}
 
+	// Reduce and append line to file
 	for key, list := range temp {
 		value := reducef(key, list)
 		fmt.Fprintf(file, "%v %v\n", key, value)
@@ -177,33 +171,6 @@ func AskForTask() (*Task, error) {
 
 func FinishedTask(task *Task) {
 	call("Coordinator.TaskDone", task, &Task{})
-}
-
-// example function to show how to make an RPC call to the coordinator.
-//
-// the RPC argument and reply types are defined in rpc.go.
-func CallExample() {
-
-	// declare an argument structure.
-	args := ExampleArgs{}
-
-	// fill in the argument(s).
-	args.X = 99
-
-	// declare a reply structure.
-	reply := ExampleReply{}
-
-	// send the RPC request, wait for the reply.
-	// the "Coordinator.Example" tells the
-	// receiving server that we'd like to call
-	// the Example() method of struct Coordinator.
-	ok := call("Coordinator.Example", &args, &reply)
-	if ok {
-		// reply.Y should be 100.
-		fmt.Printf("reply.Y %v\n", reply.Y)
-	} else {
-		fmt.Printf("call failed!\n")
-	}
 }
 
 // send an RPC request to the coordinator, wait for the response.

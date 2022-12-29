@@ -16,7 +16,6 @@ const printStuff = false
 type TaskData struct {
 	filename    string
 	stage       string // one of ["waiting", "running", "done"]
-	workerId    int    // maybe not needed
 	startedTime time.Time
 	isMap       bool
 }
@@ -67,7 +66,6 @@ func (c *Coordinator) NextTask(args *ExampleArgs, reply *Task) error {
 
 			// Save the start-time and update stage of task
 			c.tasks[i].startedTime = time.Now()
-			c.tasks[i].workerId = args.X
 			c.tasks[i].stage = "running"
 			return nil
 		}
@@ -111,14 +109,6 @@ func (c *Coordinator) TaskDone(args *Task, reply *Task) error {
 	// If we get here all map and reduce tasks are done
 	c.done = true
 
-	return nil
-}
-
-// an example RPC handler.
-//
-// the RPC argument and reply types are defined in rpc.go.
-func (c *Coordinator) Example(args *ExampleArgs, reply *ExampleReply) error {
-	reply.Y = args.X + 1
 	return nil
 }
 
