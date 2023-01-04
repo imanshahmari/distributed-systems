@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const printStuff = false
+const printStuff = true
 
 // Only internal representation of a task (see rpc.go for communication)
 type TaskData struct {
@@ -164,6 +164,7 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 			stage:    "waiting",
 			isMap:    true,
 		}
+		UploadFile(file)
 	}
 
 	// Reducing jobs

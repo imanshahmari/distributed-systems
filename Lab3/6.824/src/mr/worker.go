@@ -17,6 +17,10 @@ type KeyValue struct {
 	Value string
 }
 
+var (
+	coordinatorIp string = "localhost"
+)
+
 // use ihash(key) % NReduce to choose the reduce
 // task number for each KeyValue emitted by Map.
 func ihash(key string) int {
@@ -28,6 +32,13 @@ func ihash(key string) int {
 // main/mrworker.go calls this function.
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
+
+	coordinatorIp1, err := DownloadFile("coordinatorIp.txt")
+	if err != nil {
+		fmt.Println(err)
+	}
+	coordinatorIp = string(coordinatorIp1)
+
 	for {
 		// Get a new task
 		task, err := AskForTask()
@@ -59,7 +70,7 @@ func Worker(mapf func(string, string) []KeyValue,
 
 func mapWorker(task *Task, mapf func(string, string) []KeyValue) error {
 	// Read textfile
-	data, err := os.ReadFile(task.Filename)
+	data, err := DownloadFile(task.Filename)
 	if err != nil {
 		return err
 	}
@@ -77,7 +88,7 @@ func mapWorker(task *Task, mapf func(string, string) []KeyValue) error {
 	for _, keyVal := range kva {
 		i := ihash(keyVal.Key) % task.NMax
 		tempFileData[i] = append(tempFileData[i], keyVal)
-		
+
 	}
 
 	for i, kva := range tempFileData {
@@ -114,6 +125,8 @@ func mapWorker(task *Task, mapf func(string, string) []KeyValue) error {
 			return err
 		}
 
+		UploadFile(filename)
+
 	}
 
 	// Send that we finished map task
@@ -127,7 +140,7 @@ func reduceWorker(task *Task, reducef func(string, []string) string) error {
 	for i := 0; i < task.NMax; i++ {
 		// Read all intermediate map files for this reduce
 		fmt.Println(fmt.Sprintf("mr-%d-%s", i, task.Filename))
-		data, err := os.ReadFile(fmt.Sprintf("mr-%d-%s", i, task.Filename))
+		data, err := DownloadFile(fmt.Sprintf("mr-%d-%s", i, task.Filename))
 		if err != nil {
 			return err
 		}
@@ -159,7 +172,7 @@ func reduceWorker(task *Task, reducef func(string, []string) string) error {
 	for _, keyVal := range kva {
 		temp[keyVal.Key] = append(temp[keyVal.Key], keyVal.Value)
 	}
-	
+
 	// Reduce and append line to file
 	for key, list := range temp {
 		value := reducef(key, list)
@@ -205,7 +218,7 @@ func FinishedTask(task *Task) {
 // usually returns true.
 // returns false if something goes wrong.
 func call(rpcname string, args interface{}, reply interface{}) bool {
-	c, err := rpc.DialHTTP("tcp", "localhost"+":1234")
+	c, err := rpc.DialHTTP("tcp", coordinatorIp)
 	//sockname := coordinatorSock()
 	//c, err := rpc.DialHTTP("unix", sockname)
 	if err != nil {
