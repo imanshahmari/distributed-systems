@@ -189,6 +189,11 @@ func reduceWorker(task *Task, reducef func(string, []string) string) error {
 		return err
 	}
 
+	err = UploadFile(filename)
+	if err != nil {
+		return err
+	}
+
 	// Send that we finished task
 	FinishedTask(task)
 	return nil
