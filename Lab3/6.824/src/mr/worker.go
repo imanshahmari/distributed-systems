@@ -77,6 +77,7 @@ func mapWorker(task *Task, mapf func(string, string) []KeyValue) error {
 	for _, keyVal := range kva {
 		i := ihash(keyVal.Key) % task.NMax
 		tempFileData[i] = append(tempFileData[i], keyVal)
+		
 	}
 
 	for i, kva := range tempFileData {
@@ -125,6 +126,7 @@ func reduceWorker(task *Task, reducef func(string, []string) string) error {
 
 	for i := 0; i < task.NMax; i++ {
 		// Read all intermediate map files for this reduce
+		fmt.Println(fmt.Sprintf("mr-%d-%s", i, task.Filename))
 		data, err := os.ReadFile(fmt.Sprintf("mr-%d-%s", i, task.Filename))
 		if err != nil {
 			return err
@@ -157,7 +159,7 @@ func reduceWorker(task *Task, reducef func(string, []string) string) error {
 	for _, keyVal := range kva {
 		temp[keyVal.Key] = append(temp[keyVal.Key], keyVal.Value)
 	}
-
+	
 	// Reduce and append line to file
 	for key, list := range temp {
 		value := reducef(key, list)
@@ -203,9 +205,9 @@ func FinishedTask(task *Task) {
 // usually returns true.
 // returns false if something goes wrong.
 func call(rpcname string, args interface{}, reply interface{}) bool {
-	// c, err := rpc.DialHTTP("tcp", "127.0.0.1"+":1234")
-	sockname := coordinatorSock()
-	c, err := rpc.DialHTTP("unix", sockname)
+	c, err := rpc.DialHTTP("tcp", "localhost"+":1234")
+	//sockname := coordinatorSock()
+	//c, err := rpc.DialHTTP("unix", sockname)
 	if err != nil {
 		log.Fatal("dialing:", err)
 	}
