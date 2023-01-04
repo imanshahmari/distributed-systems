@@ -205,7 +205,7 @@ func FinishedTask(task *Task) {
 // usually returns true.
 // returns false if something goes wrong.
 func call(rpcname string, args interface{}, reply interface{}) bool {
-	c, err := rpc.DialHTTP("tcp", "localhost"+":1234")
+	c, err := rpc.DialHTTP("tcp", "54.175.32.163"+":1234")
 	//sockname := coordinatorSock()
 	//c, err := rpc.DialHTTP("unix", sockname)
 	if err != nil {
