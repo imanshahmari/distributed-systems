@@ -167,7 +167,7 @@ func (c *Coordinator) Done() bool {
 
 func getIp() string {
 	url := "https://api.ipify.org?format=text"
-	fmt.Printf("Getting IP address from  ipify ...\n")
+	fmt.Printf("Getting IP address ...\n")
 
 	resp, err := http.Get(url)
 	if err != nil {
@@ -178,7 +178,6 @@ func getIp() string {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Printf("My IP is:%s\n", ip)
 
 	return string(ip)
 }
