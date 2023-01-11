@@ -1,4 +1,7 @@
 
+The basic functionality (local machine) is in this release: https://github.com/imanshahmari/distributed-systems/releases/tag/local-mapreduce 
+
+For the distributed version of the code: https://github.com/imanshahmari/distributed-systems/tree/main/Lab3
 
 ## Build and run
 
@@ -11,3 +14,8 @@ Build plugin ws.so (IMPORTANT must build after every time we save, otherwise we 
 Run the coordinator and then the worker(s)
 ``` go run -race mrcoordinator.go 1.txt 2.txt 3.txt ```
 ``` go run -race mrworker.go wc.so ```
+
+
+``` go run saveIp.go ```
+``` cat mr-out-* | sort | more ```
+``` bash test-mr.sh ```
