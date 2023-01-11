@@ -2,6 +2,7 @@ package mr
 
 import (
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -73,7 +74,6 @@ func (c *Coordinator) NextTask(args *ExampleArgs, reply *Task) error {
 
 	// If we are done, return error to exit otherwise wait for running tasks to finish
 	if c.done {
-		c.downloadResults()
 		return fmt.Errorf("no next task, exiting")
 	} else {
 		time.Sleep(time.Second)
@@ -111,6 +111,7 @@ func (c *Coordinator) TaskDone(args *Task, reply *Task) error {
 	}
 	// If we get here all map and reduce tasks are done
 	c.done = true
+	c.downloadResults()
 
 	return nil
 }
@@ -161,18 +162,34 @@ func (c *Coordinator) Done() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	//for _, task := range c.tasks {
-	//	fmt.Print(task.filename, " ", task.stage, "\t")
-	//}
-	//fmt.Print("\n")
 	return c.done
+}
+
+func getIp() string {
+	url := "https://api.ipify.org?format=text"
+	fmt.Printf("Getting IP address from  ipify ...\n")
+
+	resp, err := http.Get(url)
+	if err != nil {
+		panic(err)
+	}
+	defer resp.Body.Close()
+	ip, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("My IP is:%s\n", ip)
+
+	return string(ip)
 }
 
 // create a Coordinator.
 // main/mrcoordinator.go calls this function.
 // nReduce is the number of reduce tasks to use.
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
-	// Your code here.
+	// Get our public ip and save to aws for workers to use
+	ip := getIp()
+	SaveIp(ip)
 
 	c := Coordinator{
 		nReduce: nReduce,
@@ -204,6 +221,7 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 		}
 	}
 
+	fmt.Println("Redy, waiting for workers.")
 	c.server()
 	return &c
 }

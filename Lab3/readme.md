@@ -14,3 +14,7 @@ Build plugin ws.so (IMPORTANT must build after every time we save, otherwise we 
 Run the coordinator and then the worker(s)
 ``` go run -race mrcoordinator.go 1.txt 2.txt 3.txt ```
 ``` go run -race mrworker.go wc.so ```
+
+
+``` go run saveIp.go ```
+``` cat mr-out-* | sort | more ```

@@ -90,3 +90,18 @@ func DownloadFile(filename string) ([]byte, error) {
 
 	return body, nil
 }
+
+func SaveIp(ip string) {
+	f, err := os.Create("coordinatorIp.txt")
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	f.Write([]byte(ip))
+
+	err = UploadFile("coordinatorIp.txt")
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println("Saved ip:", ip)
+}

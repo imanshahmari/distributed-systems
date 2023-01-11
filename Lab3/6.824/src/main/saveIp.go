@@ -2,27 +2,25 @@ package main
 
 import (
 	"fmt"
-	"os"
+	"io/ioutil"
+	"net/http"
 
 	"6.824/mr"
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: go run saveIp.go ip:port\n")
-		os.Exit(1)
-	}
-
-	f, err := os.Create("coordinatorIp.txt")
+	url := "https://api.ipify.org?format=text"
+	fmt.Printf("Getting IP address from  ipify ...\n")
+	resp, err := http.Get(url)
 	if err != nil {
-		fmt.Println(err)
+		panic(err)
 	}
-
-	f.Write([]byte(os.Args[1]))
-
-	err = mr.UploadFile("coordinatorIp.txt")
+	defer resp.Body.Close()
+	ip, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Println(err)
+		panic(err)
 	}
-	fmt.Println("Saved ip:", os.Args[1])
+	fmt.Printf("My IP is:%s\n", ip)
+
+	mr.SaveIp(string(ip))
 }

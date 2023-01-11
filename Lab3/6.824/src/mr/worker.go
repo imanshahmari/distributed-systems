@@ -139,7 +139,7 @@ func reduceWorker(task *Task, reducef func(string, []string) string) error {
 
 	for i := 0; i < task.NMax; i++ {
 		// Read all intermediate map files for this reduce
-		fmt.Println(fmt.Sprintf("mr-%d-%s", i, task.Filename))
+		fmt.Println("Downloading:", fmt.Sprintf("mr-%d-%s", i, task.Filename))
 		data, err := DownloadFile(fmt.Sprintf("mr-%d-%s", i, task.Filename))
 		if err != nil {
 			return err
