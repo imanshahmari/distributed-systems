@@ -18,3 +18,4 @@ Run the coordinator and then the worker(s)
 
 ``` go run saveIp.go ```
 ``` cat mr-out-* | sort | more ```
+``` bash test-mr.sh ```
