@@ -1,4 +1,7 @@
 
+The basic functionality (local machine) is in this release: https://github.com/imanshahmari/distributed-systems/releases/tag/local-mapreduce 
+
+For the distributed version of the code: https://github.com/imanshahmari/distributed-systems/tree/main/Lab3
 
 ## Build and run
 

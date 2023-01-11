@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/rpc"
+	"os"
 	"sync"
 	"time"
 )
@@ -72,6 +73,7 @@ func (c *Coordinator) NextTask(args *ExampleArgs, reply *Task) error {
 
 	// If we are done, return error to exit otherwise wait for running tasks to finish
 	if c.done {
+		c.downloadResults()
 		return fmt.Errorf("no next task, exiting")
 	} else {
 		time.Sleep(time.Second)
@@ -111,6 +113,29 @@ func (c *Coordinator) TaskDone(args *Task, reply *Task) error {
 	c.done = true
 
 	return nil
+}
+
+func (c *Coordinator) downloadResults() {
+	for i := 0; i < c.nReduce; i++ {
+		name := fmt.Sprintf("mr-out-%d", i)
+
+		fmt.Println("Retriveing result:", name)
+		data, err := DownloadFile(name)
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		f, err := os.Create(name)
+		if err != nil {
+			fmt.Println(err)
+		}
+		defer f.Close()
+
+		_, err = f.Write(data)
+		if err != nil {
+			fmt.Println(err)
+		}
+	}
 }
 
 // start a thread that listens for RPCs from worker.go
