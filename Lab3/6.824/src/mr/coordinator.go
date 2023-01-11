@@ -12,7 +12,10 @@ import (
 	"time"
 )
 
-const printStuff = true
+const (
+	printStuff bool   = true
+	port       string = ":1234"
+)
 
 // Only internal representation of a task (see rpc.go for communication)
 type TaskData struct {
@@ -143,7 +146,7 @@ func (c *Coordinator) downloadResults() {
 func (c *Coordinator) server() {
 	rpc.Register(c)
 	rpc.HandleHTTP()
-	l, e := net.Listen("tcp", ":1234")
+	l, e := net.Listen("tcp", port)
 	//sockname := coordinatorSock()
 	//os.Remove(sockname)
 	//l, e := net.Listen("unix", sockname)
@@ -188,7 +191,7 @@ func getIp() string {
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	// Get our public ip and save to aws for workers to use
 	ip := getIp()
-	SaveIp(ip)
+	SaveIp(ip + port)
 
 	c := Coordinator{
 		nReduce: nReduce,

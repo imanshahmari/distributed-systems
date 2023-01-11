@@ -20,7 +20,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Printf("My IP is:%s\n", ip)
 
-	mr.SaveIp(string(ip))
+	mr.SaveIp(string(ip) + ":1234")
 }
