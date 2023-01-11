@@ -8,16 +8,21 @@ import (
 )
 
 func main() {
-	ip := "54.175.32.163:1234"
+	if len(os.Args) < 2 {
+		fmt.Fprintf(os.Stderr, "Usage: go run saveIp.go ip:port\n")
+		os.Exit(1)
+	}
+
 	f, err := os.Create("coordinatorIp.txt")
 	if err != nil {
 		fmt.Println(err)
 	}
 
-	f.Write([]byte(ip))
+	f.Write([]byte(os.Args[1]))
 
 	err = mr.UploadFile("coordinatorIp.txt")
 	if err != nil {
 		fmt.Println(err)
 	}
+	fmt.Println("Saved ip:", os.Args[1])
 }
